@@ -1,0 +1,701 @@
+---
+title: "Haplotype_Network_Plots"
+author: "Sam"
+date: "5/13/2020"
+output: pdf_document
+---
+
+Haplotype network plot analyses by Strata for AK harbor porpoise
+
+Requirements
+```{r,warning=F,results="hide",message=F}
+
+setwd("L:/My Drive/Southeast AK Harbor Porpoise Structure/R_Project/Scripts")
+
+library(ape)
+library(pegas)
+library(tidyverse)
+library(RColorBrewer)
+library(phangorn)
+library(ggspatial)
+library(maps)
+library(rubias)
+library(spatstat)
+library(gplots)
+```
+
+
+Data
+```{r}
+
+pho_dal_haplos<-read.dna("../Data/Ppho_Pdal_alignment_379bp_AK_only.fasta", format="fasta")
+
+#meta_data<-read.csv("../Data/20230921_metadata_eDNA_combined_haplotypes.csv",na.strings = c("","NA")) #new with 2019 samples
+load("Haplotype_Data_Exploration.RData")
+meta_data<-meta_data %>% filter(is.na(AK_STRATA_1)==F,is.na(Haplotypes)==F)
+
+AK_haplo_labels<-unique(meta_data$Haplotypes)
+length(AK_haplo_labels)
+
+all_haplo_labels<-labels(pho_dal_haplos)
+
+AK_haplo_labels[which(!AK_haplo_labels%in%all_haplo_labels)] #any AK haplos that aren't in the fasta file?
+all_haplo_labels[which(!all_haplo_labels%in%AK_haplo_labels)] #which hapoltypes aren't in AK
+
+
+#AK_haplos<-read.dna("../Data/Ppho58hap090816.fasta",format="fasta")
+AK_haplos<-pho_dal_haplos
+
+AK_haplo_labels<-as.character(unique(meta_data$Haplotypes))
+
+#filter out the haplos that don't appear in the AK samples:
+AK_haplos_filtered<-AK_haplos[which(labels(AK_haplos)%in%AK_haplo_labels),]
+unique(labels(AK_haplos_filtered))
+
+AK_haplotype<-haplotype(AK_haplos_filtered) # this just contains the unique haplotypes. I need samples. 
+
+#I want a DNAbin object with each unique sample labeled as the strata of interest, for each strata. 
+#So I can input the DNA sequences from the fasta file by accessing the Haplotype column. 
+
+#TEST:
+AK_seqs_df<-data.frame(ID=labels(AK_haplos_filtered),
+                 seq=sapply(AK_haplos_filtered, paste, collapse=""))
+#AK_seqs_df<-AK_seqs_df%>%mutate(ID=as.character(ID),seq=as.character(seq))
+#AK_seqs_df$seq<-unlist(strsplit(AK_seqs_df$seq,split = " "))
+test.bin<-as.DNAbin(as.matrix(sapply(AK_haplos_filtered, paste, collapse="")))
+
+
+meta_data$seqs<-AK_haplos_filtered[match(meta_data$Haplotypes,rownames(AK_haplos_filtered)),]
+
+meta_data$strata1_seqs<-meta_data$seqs
+meta_data$strata2_seqs<-meta_data$seqs
+meta_data$strata3_seqs<-meta_data$seqs
+
+rownames(meta_data$strata1_seqs)<-meta_data$AK_STRATA_1
+rownames(meta_data$strata2_seqs)<-meta_data$AK_STRATA_2
+rownames(meta_data$strata3_seqs)<-meta_data$AK_STRATA_3
+
+strata1_haplo<-haplotype(meta_data$strata1_seqs,strict = T)
+rownames(strata1_haplo)<-as.character(unique(meta_data$Haplotypes[which(is.na(meta_data$AK_STRATA_1)==F)]))
+
+strata2_haplo<-haplotype(meta_data$strata2_seqs[is.na(meta_data$AK_STRATA_2)==F,],strict = T)
+rownames(strata2_haplo)<-as.character(unique(meta_data$Haplotypes[is.na(meta_data$AK_STRATA_2)==F]))
+
+strata3_haplo<-haplotype(meta_data$strata3_seqs[is.na(meta_data$AK_STRATA_3)==F,],strict=T)
+rownames(strata3_haplo)<-as.character(unique(meta_data$Haplotypes[is.na(meta_data$AK_STRATA_3)==F]))
+
+
+```
+
+Network plots:
+
+Strata1:
+```{r}
+par(oma = c(1, 1, 1, 0),mar=c(6,0,2,0),xpd=T)
+
+Strata1Net<-haploNet(strata1_haplo)
+
+ind.hap<-with(
+  stack(setNames(attr(strata1_haplo, "index"),rownames(strata1_haplo))),
+        table(hap=ind,individuals=rownames(meta_data$strata1_seqs)[values])
+)
+
+
+colz=brewer.pal(4,"Set3")
+
+#NOTE: THESE ARE SIZED ON A LOG SCALE BY FREQUENCY
+size.plot<-attr(Strata1Net, "freq")
+attr(Strata1Net,"labels")
+plot(Strata1Net, size=log(size.plot*2), scale.ratio = 1, cex = .8, 
+     pie=ind.hap,
+     threshold=0,
+     bg=colz,
+     show.mutation=2,
+     main="Median Joining Network Plot\nStrata1")
+
+legend("topright", colnames(ind.hap), fill = colz,cex=.7,box.lty = 0,xpd=T,ncol = 1)
+
+#legend("topleft",pch = 1,pt.cex = log(c(1,10)*5) ,legend = c("1","10"),title = "nSamples",box.lty=0)
+#box()
+
+
+```
+
+
+Strata2:
+```{r}
+par(oma = c(1, 1, 1, 0),mar=c(7,0,2,0),xpd=T)
+
+Strata2Net<-haploNet(strata2_haplo)
+
+ind.hap<-with(
+  stack(setNames(attr(strata2_haplo, "index"),rownames(strata2_haplo))),
+        table(hap=ind,individuals=rownames(meta_data$strata2_seqs)[values])
+)
+
+colz=brewer.pal(6,"Set2")
+#NOTE: THESE ARE SIZED ON A LOG SCALE BY FREQUENCY
+size.plot<-attr(Strata2Net, "freq")
+attr(Strata2Net,"labels")
+plot(Strata2Net, size=log(size.plot*2), scale.ratio = 1, cex = .8, 
+     pie=ind.hap,
+     threshold=0,
+     bg=colz,
+     show.mutation=2,
+     main="Median Joining Network Plot\nStrata2")
+
+legend("topright", colnames(ind.hap), fill = colz,cex=.7,box.lty = 0,xpd=T,ncol = 1)
+
+#legend("topleft",pch = 1,pt.cex = log(c(1,10)*5) ,legend = c("1","10"),title = "nSamples",box.lty=0)
+#box()
+
+
+```
+
+Strata3:
+```{r}
+par(oma = c(1, 1, 1, 0),mar=c(1,0,2,1),xpd=T)
+
+Strata3Net<-haploNet(strata3_haplo)
+
+#ind.hap<-with(
+#  stack(setNames(attr(strata3_haplo, "index"),rownames(strata3_haplo))),
+#        table(hap=ind,individuals=rownames(meta_data$strata3_seqs)[values]))
+
+ind.hap<-meta_data%>%filter(!is.na(AK_STRATA_3),!is.na(Haplotypes))%>%group_by(Haplotypes,AK_STRATA_3)%>%summarize(n=n())%>%ungroup()%>%
+  spread(key = AK_STRATA_3,value = n,fill=0)
+ind.hap<-ind.hap[match(attr(Strata3Net,"labels"),ind.hap$Haplotypes),]
+ind.hap<-as.data.frame(ind.hap)
+rownames(ind.hap)<-ind.hap$Haplotypes
+ind.hap<-ind.hap%>%dplyr::select(!Haplotypes)
+ind.hap<-as.matrix(ind.hap)
+
+ind.hap
+
+#Number of unique haplotypes
+#colnames(ind.hap)<-c("BARROW 3","COOK 13","COPPER 10","NE_BERING 5","N_SEAK 10","S_SEAK 5","SE_BERING 4","W_BERING 2","YAKUTAT 1")
+#Sample size:
+colnames(ind.hap)<-c("BARROW (n = 5)","COOK (n = 17)","COPPER (n = 18)","N_SEAK (n = 64)","NE_BERING (n = 14)","S_SEAK (n = 23)","SE_BERING (n = 4)","W_BERING (n = 4)","YAKUTAT (n = 5)")
+
+
+#colz<-c("yellow","tan","green","darkgrey","turquoise","plum","hotpink","orange","gold")
+colz<-c("yellow","pink","green","blue","black","purple","hotpink","darkorange","gold")
+colz_hex<-col2hex(colz)
+#colz_hex<-paste(colz_hex,"CC",sep="")
+
+colz_hex<-paste(colz_hex,"B3",sep="")
+
+#NOTE: THESE ARE SIZED ON A LOG SCALE BY FREQUENCY
+png("../Figures/HaploNetwork_No_Labels.png",width = 6.5,height = 5,units = "in",res = 800)
+
+size.plot<-attr(Strata3Net, "freq")
+attr(Strata3Net,"labels")
+plot(Strata3Net, size=log(size.plot*2), scale.ratio = 1, cex = .7, 
+     pie=ind.hap,labels=F,
+     threshold=0,
+     bg=colz_hex,
+     show.mutation=2,
+     main="")
+
+legend("topleft", colnames(ind.hap),fill = colz_hex,cex=.75,box.lty = 0,xpd=T,ncol = 1)
+
+#legend("topleft",pch = 1,pt.cex = log(c(1,10)*5) ,legend = c("1","10"),title = "nSamples",box.lty=0)
+#box()
+dev.off()
+```
+
+
+
+While I am using pegas I may as well do haplotype and nucleotide diveristy while I'm at it:
+```{r}
+
+pops<-as.data.frame(unique(meta_data$AK_STRATA_3))%>%drop_na
+pops<-as.character(pops$`unique(meta_data$AK_STRATA_3)`)
+
+haplo_stats<-as.data.frame(matrix(nrow=0,ncol = 3))
+
+for (i in 1:length(pops)){
+  temp_haplo<-meta_data$strata3_seqs[which(meta_data$AK_STRATA_3==pops[i]),]
+  haplo_stats[i,1]<-pops[i]
+  haplo_stats[i,2]<-dim(temp_haplo)[1]
+  haplo_stats[i,3]<-length(unique(meta_data$Haplotypes[which(meta_data$AK_STRATA_3==pops[i])]))
+  haplo_stats[i,4]<-hap.div(temp_haplo)
+  haplo_stats[i,5]<-nuc.div(temp_haplo)
+}
+colnames(haplo_stats)<-c('Site','nSamples','nHaplotypes','Haplotype Diversity','Nucleotide Diversity')
+haplo_stats[,4:5]<-round(haplo_stats[,4:5],5)
+
+strata3_haplo[i,]
+hap.div(strata3_haplo)
+nuc.div(strata3_haplo)
+
+meta_data$strata3_seqs[which(meta_data$AK_STRATA_3=="BARROW")]
+
+haplo_frequencies<-meta_data %>% filter(is.na(AK_STRATA_1)==F) %>% group_by(Haplotypes) %>% dplyr::summarise(n=n()) %>% ungroup() %>% mutate(freq=round(n/sum(n),4))
+
+```
+
+Hierarchical AMOVA:
+```{r}
+meta_data_amova<-meta_data%>%filter(is.na(AK_STRATA_3)==F)
+
+d<-dist.dna(meta_data_amova$seqs)
+S1<-factor(rownames(meta_data_amova$strata1_seqs))
+S2<-factor(rownames(meta_data_amova$strata2_seqs))
+S3<-factor(rownames(meta_data_amova$strata3_seqs))
+
+amova_out_1<-amova(d~S1/S2,nperm = 1000)
+amova_out_2<-amova(d~S2/S3,nperm = 1000)
+sig2 <- setNames(amova_out_1$varcomp$sigma2, rownames(amova_out_1$varcomp))
+
+```
+
+Going to run the AMOVA in arlequin - setting up arlequin input files:
+
+- Haplotype List
+- Sample List
+- Number of samples
+
+```{r}
+
+Haplo_freqs <-as.data.frame(table(meta_data_amova$Haplotypes))%>%filter(Freq>0)
+
+Haplo_seqs <- AK_haplos[,Haplo_freqs$Var1]
+
+write.table(Haplo_freqs,"AMOVA/AMOVA_final/AK_Haplo_Freqs.txt",sep = " ")
+
+write.FASTA(AK_haplos,"AMOVA/AMOVA_final/AK_Haplotype_Seqs.fasta")
+
+#I need a list of haplotypes and their frequencies for each Strata3
+
+Strata3_amova<-meta_data_amova %>% group_by(AK_STRATA_3,Haplotypes) %>% summarize(n=n())
+write.table(Strata3_amova,"AMOVA/AMOVA_final/Strata_3_pops.txt",sep = " ",quote = F,row.names = F)
+sum(Strata3_amova$n)
+
+Strata2_amova<-meta_data_amova %>% group_by(AK_STRATA_2,Haplotypes) %>% summarize(n=n())
+write.table(Strata2_amova,"AMOVA/AMOVA_final/Strata_2_pops.txt")
+
+
+```
+
+
+Map of Haplotypes and SNP data
+```{r}
+
+meta_data<-read_csv("../Data/20230921_metadata_eDNA_combined_haplotypes.csv")%>%dplyr::select(Genetic_ID,AK_STRATA_3,Longitude,Latitude,SampleType,Haplotypes,Num_AK3_WC4,FilterReps_1Keep_2Remove)
+meta_data<-meta_data %>% filter(FilterReps_1Keep_2Remove==1) %>% mutate(AK_STRATA_3 = ifelse(AK_STRATA_3=="SEAK_INTERMEDIATE","N_SEAK",AK_STRATA_3))
+
+meta_data_map<-meta_data%>% filter(!(SampleType=="eDNA"&is.na(Haplotypes)),FilterReps_1Keep_2Remove==1)
+#Kodiak isn't in Strata 3, so I need to add it in for the map:
+meta_data_map$AK_STRATA_3<-as.character(meta_data_map$AK_STRATA_3)
+meta_data_map$AK_STRATA_3[which(meta_data_map$Num_AK3_WC4=="17_KODIAK")]<-"KODIAK"
+meta_data_map$AK_STRATA_3<-stringr::str_replace_all(meta_data_map$AK_STRATA_3,"SEAK_INTERMEDIATE","N_SEAK")
+meta_data_map$AK_STRATA_3<-stringr::str_replace_all(meta_data_map$AK_STRATA_3,"SEAK_NORTH","N_SEAK")
+meta_data_map$AK_STRATA_3<-stringr::str_replace_all(meta_data_map$AK_STRATA_3,"SEAK_SOUTH","S_SEAK")
+
+meta_data_map<-meta_data_map%>%
+  filter(is.na(AK_STRATA_3)==F)%>%
+  mutate(MarkerType=if_else(SampleType=="eDNA","mtDNA",if_else(SampleType=="Tissue" & is.na(Haplotypes)==T,"SNPs","Both")))
+
+meta_data_map$Longitude_new<-ifelse(meta_data_map$Longitude < 0, meta_data_map$Longitude + 360,meta_data_map$Longitude)
+
+meta_data_map$MarkerType<-factor(meta_data_map$MarkerType,levels = c("SNPs","mtDNA","Both"))
+meta_data_map$AK_STRATA_3<-as.factor(meta_data_map$AK_STRATA_3)
+levels(meta_data_map$AK_STRATA_3)<-c("BARROW","COOK","COPPER","KODIAK","N_SEAK","NE_BERING","S_SEAK","SE_BERING","W_BERING","YAKUTAT")
+colz<-c("yellow","pink","green","red","blue","black","purple","hotpink","darkorange","gold")
+
+USA<-map_data("world",wrap=c(0,360)) %>% 
+  filter(region=="USA")
+Canada <- map_data("world",wrap=c(0,360)) %>% 
+  filter(region=="Canada")
+Russia <- map_data("world",wrap=c(0,360)) %>% 
+  filter(region=="Russia")
+seak_box<-data.frame(x1=c(222), x2=c(230), y1=c(55), y2=c(60))
+
+
+big_map<-ggplot() +
+  geom_polygon(data=USA, aes(x=long,y=lat,group=group),fill='grey37',alpha=0.5) +
+  geom_polygon(data=Canada, aes(x=long,y=lat,group=group),fill='grey17',alpha=0.5) +
+  geom_polygon(data=Russia, aes(x=long,y=lat,group=group),fill='grey17',alpha=0.5) +
+  #geom_rect(data=seak_box,aes(xmin=x1,xmax=x2,ymin=y1,ymax=y2),color="black",fill=NA,lwd=1.2)+
+  geom_jitter(data=meta_data_map, width=.1, height=.1,
+              aes(x=Longitude_new,y=Latitude,
+                                     fill=AK_STRATA_3,
+                                     shape=MarkerType), 
+             size=2, alpha=0.7) +
+    coord_map(xlim= c(164, 235),  ylim = c(52,71))+
+    theme(panel.background = element_rect(fill = "aliceblue"), 
+        panel.grid.major = element_line(colour = NA), 
+        axis.text=element_text(size=12),
+        axis.title =element_text(size=12),
+        #legend.title=element_text(size=12),
+        legend.text=element_text(size=12),
+        legend.title = element_blank(),
+        legend.box="vertical",
+        legend.position="bottom") + 
+  labs(x = "Longitude", y = "Latitude")+
+  scale_y_continuous(breaks=c(50,60,70),
+                     labels=c("50 N","60 N","70 N")) +
+  scale_x_continuous(breaks=c(180,200,220),
+                     labels=c("180","160 W","140 W")) +
+  #theme(
+  #      ,
+  #      axis.title=element_blank(),
+  #      plot.margin = margin(0, .5, 0, .5, "cm"))+
+  #scale_size(guide=F) +
+  guides(color=guide_legend(nrow=4))+
+  
+  scale_shape_manual(values=c(22,24,21))+
+  scale_fill_manual(values=colz)+
+  guides(fill=guide_legend(override.aes=list(color=colz)))
+big_map
+ggsave(big_map,units="in",dpi = 300,width = 8,height = 5,filename = "../Figures/map_no_inset.png")
+
+
+#Zoom in on SEAK
+SEAK_map<- ggplot() +
+  geom_polygon(data=USA, aes(x=long,y=lat,group=group),fill='grey37',alpha=0.5) +
+  geom_polygon(data=Canada, aes(x=long,y=lat,group=group),fill='grey17',alpha=0.5) +
+  geom_jitter(data=meta_data_map, width=.1, height=.1,
+              aes(x=Longitude_new,y=Latitude,
+                                     fill=AK_STRATA_3,
+                                     shape=MarkerType), 
+             size=2, alpha=0.7) +
+  coord_map(xlim= c(222, 230),  ylim = c(55,60))+
+   theme(panel.background = element_rect(fill = "aliceblue"), 
+        panel.grid.major = element_line(colour = NA),
+        legend.position= "none",
+        axis.text=element_text(size=10),
+        panel.border = element_rect(colour = "black", fill=NA, size=1.3),
+        #axis.title =element_text(size=12),
+         axis.title =element_blank())+
+        #legend.title=element_text(size=12),
+        #legend.text=element_text(size=12),
+        #legend.title = element_blank(),
+        #legend.box="vertical",
+        #legend.position="bottom") + 
+  labs(x = "Longitude", y = "Latitude")+
+  scale_y_continuous(breaks=c(55,57,60),
+                     labels=c("55 N","57 N","60 N")) +
+  scale_x_continuous(breaks=c(222,226,230),
+                     labels=c("138","134 W","130 W")) +
+  #coord_equal() + theme_bw() + 
+  #theme(legend.title=element_blank(),
+        #axis.text = element_blank(),
+        #axis.title = element_blank(),
+        #axis.ticks= element_blank())+
+        #plot.margin = margin(0, 0, 0, 0, "cm"),
+        #axis.ticks.length = unit(0,"cm"),
+        #panel.spacing = unit(0, "cm"))+
+  scale_size(guide=F) +
+  guides(color=guide_legend(nrow=4))+
+
+  scale_shape_manual(values=c(22,24,21))+
+  scale_fill_manual(values=colz)+
+  guides(fill=guide_legend(override.aes=list(color=c("purple","blue"))))
+SEAK_map
+ggsave(SEAK_map,units="in",dpi = 300,width = 7,height = 8.5,filename = "../Figures/SEAK_map_inset.png")
+
+
+
+library(colorspace)
+
+n_cols<-meta_data_map %>% filter(AK_STRATA_3%in%c("N_SEAK","S_SEAK"))
+length(unique(n_cols$Haplotypes))
+set.seed(123)  # For reproducibility
+colorsz <- sample(colors(), 13,replace = F)
+colorsz <- brewer.pal(n = 12,"Paired")
+#colorsz <- rainbow_hcl(13)
+# Find unique haplotypes excluding "NA"
+unique_haplotypes <- unique(n_cols$Haplotypes)[!is.na(unique(n_cols$Haplotypes))]
+
+# Create a named vector mapping each haplotype to a color
+haplo_colors <- setNames(colorsz, unique_haplotypes)
+
+# Manually set the color for "NA" to grey
+haplo_colors["NA"] <- "darkgrey"
+
+#Zoom in on SEAK, color by haplotype.
+SEAK_haplo_map<- ggplot() +
+  geom_polygon(data=USA, aes(x=long,y=lat,group=group),fill='grey37',alpha=0.5) +
+  geom_polygon(data=Canada, aes(x=long,y=lat,group=group),fill='grey17',alpha=0.5) +
+  geom_jitter(data=meta_data_map %>% filter(AK_STRATA_3%in%c("N_SEAK","S_SEAK")), width=.1, height=.1,
+              aes(x=Longitude_new,y=Latitude,
+                                     fill=Haplotypes,
+                                     shape=MarkerType), 
+             size=2, alpha=0.9) +
+  coord_map(xlim= c(222, 230),  ylim = c(55,60))+
+   theme(panel.background = element_rect(fill = "aliceblue"), 
+        panel.grid.major = element_line(colour = NA),
+        #legend.position= "none",
+        axis.text=element_text(size=10),
+        panel.border = element_rect(colour = "black", fill=NA, size=1.3),
+        #axis.title =element_text(size=12),
+         axis.title = element_blank())+
+        #legend.title=element_text(size=12),
+        #legend.text=element_text(size=12),
+        #legend.title = element_blank(),
+        #legend.box="vertical",
+        #legend.position="bottom") + 
+  labs(x = "Longitude", y = "Latitude")+
+  scale_y_continuous(breaks=c(55,57,60),
+                     labels=c("55 N","57 N","60 N")) +
+  scale_x_continuous(breaks=c(222,226,230),
+                     labels=c("138","134 W","130 W")) +
+  #coord_equal() + theme_bw() + 
+  guides(fill=guide_legend(ncol=3))+
+
+  scale_shape_manual(values=c(22,24,21))+
+  scale_fill_manual(values=haplo_colors)+
+  guides(fill=guide_legend(override.aes=list(shape=21)))
+SEAK_haplo_map
+ggsave(SEAK_haplo_map,units="in",dpi = 300,width = 7,height = 8.5,filename = "../Figures/SEAK_haplo_map.png")
+
+
+S_SEAK_map<- ggplot() +
+  geom_polygon(data=USA, aes(x=long,y=lat,group=group),fill='grey37',alpha=0.5,show.legend = F) +
+  geom_polygon(data=Canada, aes(x=long,y=lat,group=group),fill='grey17',alpha=0.5,show.legend = F) +
+  geom_jitter(data=meta_data_map %>% filter(AK_STRATA_2=="EASTERN_GOA"), width=0.0, height=0.0,
+              aes(x=Longitude_new,y=Latitude,
+                                     #fill=AK_STRATA_3,
+                                     fill = Haplotypes,
+                                     #color = Haplotypes,
+                                     shape=MarkerType), 
+             size=2, alpha=0.7,color="black") +
+  coord_map(xlim= c(225.5, 228),  ylim = c(56,57.2))+
+   theme(panel.background = element_rect(fill = "aliceblue"), 
+        panel.grid.major = element_line(colour = NA),
+        #legend.position= "none",
+        axis.text=element_text(size=10),
+        panel.border = element_rect(colour = "black", fill=NA, size=1.3),
+        #axis.title =element_text(size=12),
+         axis.title =element_blank())+
+        #legend.title=element_text(size=12),
+        #legend.text=element_text(size=12),
+        #legend.title = element_blank(),
+        #legend.box="vertical",
+        #legend.position="bottom") + 
+  labs(x = "Longitude", y = "Latitude")+
+  scale_y_continuous(breaks=c(56,57),
+                     labels=c("55 N","57 N")) +
+  scale_x_continuous(breaks=c(226,228),
+                     labels=c("134 W","132 W")) +
+  #coord_equal() + theme_bw() + 
+  #theme(legend.title=element_blank(),
+        #axis.text = element_blank(),
+        #axis.title = element_blank(),
+        #axis.ticks= element_blank())+
+        #plot.margin = margin(0, 0, 0, 0, "cm"),
+        #axis.ticks.length = unit(0,"cm"),
+        #panel.spacing = unit(0, "cm"))+
+  #scale_size(guide=F) +
+  guides(fill=guide_legend(override.aes=list(shape=21),ncol=2))+
+
+  scale_shape_manual(values=c(22,24,21))#+
+  #scale_fill_manual(values=colz)+
+  #guides(fill=guide_legend(override.aes=list(color=c("purple","blue"))))
+S_SEAK_map
+
+library(cowplot)
+library(gridExtra)
+
+#ggdraw() +
+#  draw_plot(big_map) +
+#  draw_plot(SEAK_map, scale=.2,x=.38,y=.21)
+
+#plot_grid(SEAK_map,big_map+theme(legend.position="bottom"), ncol = 2, rel_widths = c(1, 2))
+
+map_legend<-get_legend(big_map)
+map_legend<-as_ggplot(map_legend)+theme(plot.margin = margin(0.1,0.1,0.1,0.1,"cm"))
+
+#ggarrange(big_map+theme(legend.position="none"),SEAK_map,nrow = 2,heights = c(1,1.1))
+ggarrange(big_map,SEAK_map,ncol = 2,widths = c(3,1),common.legend = T,legend = "bottom")
+#
+#grid.arrange(big_map+theme(legend.position = "none"),SEAK_map,
+#             layout_matrix = rbind(c(1),c(2)),
+#             heights=c(2,1.5))
+
+#grid.arrange(big_map+theme(legend.position = "none"),SEAK_map+theme(legend.position="none"),map_legend,
+#             layout_matrix = rbind(c(1,2),c(3)),padding=.5)
+
+```
+Insert SEAK plot upper right corner
+```{r}
+SEAK_map<- ggplot() +
+  geom_polygon(data=USA, aes(x=long,y=lat,group=group),fill='grey37',alpha=0.5) +
+  geom_polygon(data=Canada, aes(x=long,y=lat,group=group),fill='grey17',alpha=0.5) +
+  geom_jitter(data=meta_data_map, width=.1, height=.1,
+              aes(x=Longitude_new,y=Latitude,
+                                     fill=AK_STRATA_3,
+                                     shape=MarkerType), 
+             size=2, alpha=0.7) +
+  coord_map(xlim= c(222, 230),  ylim = c(55,60))+
+  theme_void()+
+   theme(panel.background = element_rect(fill = "aliceblue"), 
+        panel.grid.major = element_line(colour = NA),
+        legend.position= "none",
+        axis.text=element_text(size=10),
+        #panel.border = element_rect(colour = "black", fill=NA, size=1.3),
+        #axis.title =element_text(size=12),
+         axis.title =element_blank())+
+        #legend.title=element_text(size=12),
+        #legend.text=element_text(size=12),
+        #legend.title = element_blank(),
+        #legend.box="vertical",
+        #legend.position="bottom") + 
+  labs(x = "Longitude", y = "Latitude")+
+  #scale_y_continuous(breaks=c(55,57,60),
+  #                  labels=c("55 N","57 N","60 N")) +
+  #scale_x_continuous(breaks=c(222,226,230),
+  #                  labels=c("138","134 W","130 W")) +
+  #coord_equal() + theme_bw() + 
+  theme(legend.title=element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank(),
+        axis.ticks= element_blank())+
+        #plot.margin = margin(0, 0, 0, 0, "cm"),
+        #axis.ticks.length = unit(0,"cm"),
+        #panel.spacing = unit(0, "cm"))+
+  scale_size(guide=F) +
+  guides(color=guide_legend(nrow=4))+
+
+  scale_shape_manual(values=c(22,24,21))+
+  scale_fill_manual(values=colz)+
+  guides(fill=guide_legend(override.aes=list(color=c("purple","blue"))))
+SEAK_map
+
+library(cowplot)
+ggdraw()+
+  draw_plot(big_map) + 
+  draw_plot(SEAK_map, x = 0.6, y = 0.72, width = 0.31, height = 0.3,vjust = .1)
+
+
+#SAVE THIS MAP AS pdf 9.1x5
+```
+
+
+
+rubias with Haplotype data:
+
+"At the request of the good folks at ADFG, I introduced a few hacks to allow the input to include markers that are haploid (for example mtDNA haplotypes). To denote a marker as haploid you still give it two columns of data in your data frame, but the second column of the haploid marker must be entirely NAs. When rubias is processing the data and it sees this, it assumes that the marker is haploid and it treats it appropriately."
+
+Our sample size is likely still too low to do anything about training and holdout datasets, so I'll still be using the same datasets for both. This necessarily introduces a bias which will over-estimate acuracy. 
+
+reference file:
+sample_type repunit collection indiv Ots_94857.232 Ots_94857.232.1
+
+```{r}
+
+meta_data_rubias<-as_tibble(meta_data%>%filter(is.na(AK_STRATA_3)==F,is.na(Haplotypes)==F))
+
+meta_data_rubias%>%group_by(AK_STRATA_3)%>%summarize(n())
+#remove collections with less than 5 samples
+meta_data_rubias<-meta_data_rubias%>%filter(!AK_STRATA_3%in%c("WESTERN_BERING_SEA","SOUTHEAST_BERING_SEA","WBS","SEBS"))
+meta_data_rubias$AK_STRATA_3<-as.character(meta_data_rubias$AK_STRATA_3)
+meta_data_rubias$AK_STRATA_3[which(meta_data_rubias$AK_STRATA_3=="COOK_INLET")]<-"COOK"
+meta_data_rubias$AK_STRATA_3[which(meta_data_rubias$AK_STRATA_3=="COPPER_RIVER")]<-"COPPER"
+meta_data_rubias$AK_STRATA_3[which(meta_data_rubias$AK_STRATA_3=="NORTHEAST_BERING_SEA")]<-"NE_BERING"
+meta_data_rubias$AK_STRATA_3[which(meta_data_rubias$AK_STRATA_3=="NEBS")]<-"NE_BERING"
+meta_data_rubias$AK_STRATA_3[which(meta_data_rubias$AK_STRATA_3=="SEAK_NORTH")]<-"N_SEAK"
+meta_data_rubias$AK_STRATA_3[which(meta_data_rubias$AK_STRATA_3=="SEAK_SOUTH")]<-"S_SEAK"
+
+
+
+ref<-as.data.frame(matrix(nrow=146,ncol=6))
+colnames(ref)<-c("sample_type","repunit","collection","indiv","Hap","Hap.na")
+ref<-as_tibble(ref)
+
+
+ref$sample_type<-"reference"
+ref$repunit<-(meta_data_rubias$AK_STRATA_3)
+ref$collection<-(meta_data_rubias$AK_STRATA_3)
+ref$indiv<-as.character(meta_data_rubias$Genetic_ID)
+ref$Hap<-as.character(meta_data_rubias$Haplotypes)
+
+
+
+
+
+
+```
+
+USING THIS ONE FOR PUBLICATION
+```{r, warning=F,message=F}
+### Assess reference loo: Strata 3
+
+Strata3_sims_haps <- assess_reference_loo(reference = ref, 
+                     gen_start_col = 5, 
+                     reps = 1000, 
+                     mixsize = 1000,
+                     return_indiv_posteriors = T,
+                     resampling_unit = "gene_copies")
+
+# summarise things
+repu_pofzs_haps <- Strata3_sims_haps$indiv_posteriors %>%
+  filter(repunit == simulated_repunit) %>%
+  group_by(iter, indiv, simulated_collection, repunit) %>%  # first aggregate over reporting units
+  summarise(repu_PofZ = sum(PofZ)) %>%
+  ungroup() %>%
+  arrange(repunit, simulated_collection) %>%
+  mutate(simulated_collection = factor(simulated_collection, levels = unique(simulated_collection)))
+repu_pofzs_haps$type<-"Haplotypes"
+
+# also get the number of simulated individuals from each collection
+num_simmed <- Strata3_sims_haps$indiv_posteriors %>%
+  group_by(iter, indiv) %>%
+  slice(1) %>%
+  ungroup() %>%
+  count(simulated_collection)
+  
+# note, the last few steps make simulated collection a factor so that collections within
+# the same repunit are grouped together in the plot.
+
+# now, plot it
+arl_RR_gg3_haps<- ggplot(repu_pofzs_haps, aes(x = simulated_collection, y = repu_PofZ)) +
+  geom_boxplot(aes(colour = repunit)) +
+  #geom_text(data = num_simmed, mapping = aes(y = 1.025, label = n), angle = 90, hjust = 0, vjust = 0.5, size = 3) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 9, vjust = 0.5),
+        legend.position="none") +
+  ylim(c(NA, 1.05))+
+  ggtitle("")+
+  xlab("Collection Site")+
+  ylab("Assignment Probability")
+arl_RR_gg3_haps
+
+```
+
+Combined figure with haplotypes and SNPs:
+need to run strata3 LOO in "porpoise_rubias_SNPs.Rmd" script
+
+```{r}
+library(viridis)
+repu_pofzs_combined<-rbind(repu_pofzs_haps,repu_pofzs_snps)
+colnames(repu_pofzs_combined)[6]<-"Marker"
+repu_pofzs_combined$simulated_collection<-factor(repu_pofzs_combined$simulated_collection,levels=c("BARROW", "NE_BERING", "COOK", "COPPER", "YAKUTAT", "N_SEAK", "S_SEAK"))
+
+LOO_fig<- ggplot(repu_pofzs_combined, aes(x = simulated_collection, y = repu_PofZ, fill=Marker,color=Marker)) +
+  geom_boxplot(alpha=.7) +
+  theme_classic()+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1, size = 10),
+        axis.text.y = element_text(size = 10),
+        axis.title=element_text(size=12)) +
+  scale_fill_viridis(option= "viridis",discrete=T, begin = 0, end = 0.5)+
+  scale_color_viridis(option="viridis",discrete=T, begin = 0, end = 0.5)+
+  ylim(c(NA, 1.05))+
+  ggtitle("")+
+  xlab("Collection Site")+
+  ylab("Assignment Probability")
+LOO_fig
+ggsave(plot = LOO_fig,units = "in",width=6,height = 5,filename = "../Figures/LOO_Plot_fig_S6.png",dpi=300)
+
+```
+
+
+Haplotype Frequencies:
+```{r}
+View(meta_data_AK%>%group_by(Haplotypes)%>%summarize(n=n())%>%mutate(freq=n/sum(n)))
+
+```
+
+
+

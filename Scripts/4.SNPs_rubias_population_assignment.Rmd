@@ -1,0 +1,664 @@
+---
+title: "SNP_Porpoises_Rubias"
+author: "Sam"
+date: "7/17/2020"
+output: pdf_document
+---
+
+*rubias* presents a series of intuitive analyses for assigning population of origin. They allow for power analyses to test the power of your marker set to assign population of origin. Here I analyze our SNP dataset, although rubias also allows for haplotype data. So, I will create an identical script for analyzing mtDNA data so we can compare.
+
+It is almost certainly best to just use the populations with >5 samples. I could rank the loci by power and test the power of different subsets of loci (as I did in May et al 2020), but this would introduce high-grading bias via ranking or would require us to split the dataset, which we cannot afford to do. 
+
+I'll use two primary functions here:
+
+- A standard analysis in molecular ecology is to assign individuals in the reference back to the collections in the reference using a leave-one-out procedure. This is taken care of by the self_assign() function
+-  To determine how much accuracy you can expect given a set of genetic markers and a grouping of populations (collections) into reporting units (repunits), assess_reference_loo() carries out simulations of mixtures using the leave-one-out approach of Anderson et al. (2008).
+
+
+Requirements:
+```{r, results="hide",warning=F,message=F}
+
+library(tidyverse)
+library(rubias)
+library(ggpubr)
+library(adegenet)
+
+load("Relatedness_and_Fstats_Workspace.RData")
+
+```
+
+For naming consistency - changing names and removing pops with less than 5 samples
+
+```{r}
+popNames(Strata1_genepop)<-c("BARROW","E_BERING","GOA","W_BERING")
+table(Strata1_genepop$pop)
+Strata1_genepop<-Strata1_genepop[-which(Strata1_genepop$pop=="W_BERING")]
+
+popNames(Strata2_genepop)<-c("BARROW","E_BERING","E_GOA","W_GOA","W_GOA","YAKUTAT")
+table(Strata2_genepop$pop)
+Strata2_genepop<-Strata2_genepop[-which(Strata2_genepop$pop=="YAKUTAT")]
+
+popNames(Strata3_genepop)<-c("BARROW","COOK","COPPER","N_SEAK","NE_BERING","S_SEAK","SE_BERING","W_BERING","YAKUTAT")
+table(Strata3_genepop$pop)
+Strata3_genepop<-Strata3_genepop[-which(Strata3_genepop$pop%in%c("SE_BERING","S_SEAK","W_BERING","YAKUTAT"))]
+
+
+```
+
+Data:
+
+Rubias has a specific format:
+
+- sample_type 
+- repunit 
+- collection 
+- indiv
+- 2 columns per locus
+
+### Repunit-Collection Site Comparisons
+
+In the following code blocks, the repunit is the strata unit and the collection is the strata 3 collection site. I'll perform first assess_reference_loo to simulate individuals and assess the power to assign each collection site to its strata unit. The shorthand for this repunit-collection site comparison is either repu-col or RC
+
+```{r,warning=F,message=F}
+###Strata1
+table(Strata1_genepop$pop)
+Strata1_df<-genind2df(Strata1_genepop,oneColPerAll = T)
+
+Strata1_reference<-data.frame(sample_type=rep("reference", nrow(Strata1_df)), 
+           repunit=Strata1_df$pop,
+           collection=Strata1_genepop$other$Strata3,
+           indiv=rownames(Strata1_df))
+Strata1_reference<-cbind(Strata1_reference,Strata1_df[,2:ncol(Strata1_df)])
+
+Strata1_reference$repunit<-as.character(Strata1_reference$repunit)
+Strata1_reference$collection<-as.character(Strata1_reference$collection)
+Strata1_reference$indiv<-as.character(Strata1_reference$indiv)
+
+###Strata2
+table(Strata2_genepop$pop)
+Strata2_df<-genind2df(Strata2_genepop,oneColPerAll = T)
+
+Strata2_reference<-data.frame(sample_type=rep("reference", nrow(Strata2_df)), 
+           repunit=Strata2_df$pop,
+           collection=Strata2_genepop$other$Strata3,
+           indiv=rownames(Strata2_df))
+Strata2_reference<-cbind(Strata2_reference,Strata2_df[,2:ncol(Strata2_df)])
+
+Strata2_reference$repunit<-as.character(Strata2_reference$repunit)
+Strata2_reference$collection<-as.character(Strata2_reference$collection)
+Strata2_reference$indiv<-as.character(Strata2_reference$indiv)
+
+###Strata3
+table(Strata3_genepop$pop)
+Strata3_df<-genind2df(Strata3_genepop,oneColPerAll = T)
+
+Strata3_reference<-data.frame(sample_type=rep("reference", nrow(Strata3_df)), 
+           repunit=Strata3_df$pop,
+           collection=Strata3_genepop$other$Strata3,
+           indiv=rownames(Strata3_df))
+Strata3_reference<-cbind(Strata3_reference,Strata3_df[,2:ncol(Strata3_df)])
+
+Strata3_reference$repunit<-as.character(Strata3_reference$repunit)
+Strata3_reference$collection<-as.character(Strata3_reference$collection)
+Strata3_reference$indiv<-as.character(Strata3_reference$indiv)
+
+#GOA:
+table(Strata3_genepop$pop)
+GOA_genepop<-Strata3_genepop[which(Strata3_genepop$other$Strata3%in%c("COOK","COPPER","N_SEAK","S_SEAK","YAKUTAT"))]
+GOA_df<-genind2df(GOA_genepop,oneColPerAll = T)
+
+GOA_reference<-data.frame(sample_type=rep("reference", nrow(GOA_df)), 
+           repunit=GOA_genepop$other$Strata3,
+           collection=GOA_genepop$other$Strata3,
+           indiv=rownames(GOA_df))
+GOA_reference<-cbind(GOA_reference,GOA_df[,2:ncol(GOA_df)])
+
+GOA_reference$repunit<-as.character(GOA_reference$repunit)
+GOA_reference$collection<-as.character(GOA_reference$collection)
+GOA_reference$indiv<-as.character(GOA_reference$indiv)
+
+#GOA_filtered:
+GOA_genepop_filtered<-Strata3_genepop[which(Strata3_genepop$other$Strata3%in%c("COOK","COPPER","N_SEAK"))]
+GOA_df_filtered<-genind2df(GOA_genepop_filtered,oneColPerAll = T)
+
+GOA_reference_filtered<-data.frame(sample_type=rep("reference", nrow(GOA_df_filtered)), 
+           repunit=GOA_genepop_filtered$other$Strata3,
+           collection=GOA_genepop_filtered$other$Strata3,
+           indiv=rownames(GOA_df_filtered))
+GOA_reference_filtered<-cbind(GOA_reference_filtered,GOA_df_filtered[,2:ncol(GOA_df_filtered)])
+
+GOA_reference_filtered$repunit<-as.character(GOA_reference_filtered$repunit)
+GOA_reference_filtered$collection<-as.character(GOA_reference_filtered$collection)
+GOA_reference_filtered$indiv<-as.character(GOA_reference_filtered$indiv)
+
+
+
+```
+
+
+Assess reference loo: Strata 1
+```{r, warning=F,message=F}
+ppho_sims <- assess_reference_loo(reference = Strata1_reference, 
+                     gen_start_col = 5, 
+                     reps = 1000, 
+                     mixsize = 1000,
+                     return_indiv_posteriors = T,
+                     resampling_unit = "individual")
+
+# summarise things
+repu_pofzs <- ppho_sims$indiv_posteriors %>%
+  filter(repunit == simulated_repunit) %>%
+  group_by(iter, indiv, simulated_collection, repunit) %>%  # first aggregate over reporting units
+  summarise(repu_PofZ = sum(PofZ)) %>%
+  ungroup() %>%
+  arrange(repunit, simulated_collection) %>%
+  mutate(simulated_collection = factor(simulated_collection, levels = unique(simulated_collection)))
+
+# also get the number of simulated individuals from each collection
+num_simmed <- ppho_sims$indiv_posteriors %>%
+  group_by(iter, indiv) %>%
+  slice(1) %>%
+  ungroup() %>%
+  count(simulated_collection)
+  
+# note, the last few steps make simulated collection a factor so that collections within
+# the same repunit are grouped together in the plot.
+
+# now, plot it
+arl_RC_gg1<-ggplot(repu_pofzs, aes(x = simulated_collection, y = repu_PofZ)) +
+  geom_boxplot(aes(colour = repunit)) +
+  geom_text(data = num_simmed, mapping = aes(y = 1.025, label = n), angle = 90, hjust = 0, vjust = 0.5, size = 3) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 9, vjust = 0.5)) +
+  ylim(c(NA, 1.05)) +
+  ggtitle("Strata1 Simulated Assignments RC")
+
+```
+
+
+### Assess reference loo: Strata 2
+```{r, warning=F,message=F}
+Strata2_sims <- assess_reference_loo(reference = Strata2_reference, 
+                     gen_start_col = 5, 
+                     reps = 1000, 
+                     mixsize = 1000,
+                     return_indiv_posteriors = T,
+                     resampling_unit = "individual")
+
+# summarise things
+repu_pofzs <- Strata2_sims$indiv_posteriors %>%
+  filter(repunit == simulated_repunit) %>%
+  group_by(iter, indiv, simulated_collection, repunit) %>%  # first aggregate over reporting units
+  summarise(repu_PofZ = sum(PofZ)) %>%
+  ungroup() %>%
+  arrange(repunit, simulated_collection) %>%
+  mutate(simulated_collection = factor(simulated_collection, levels = unique(simulated_collection)))
+
+# also get the number of simulated individuals from each collection
+num_simmed <- Strata2_sims$indiv_posteriors %>%
+  group_by(iter, indiv) %>%
+  slice(1) %>%
+  ungroup() %>%
+  count(simulated_collection)
+  
+# note, the last few steps make simulated collection a factor so that collections within
+# the same repunit are grouped together in the plot.
+
+# now, plot it
+arl_RC_gg2<-ggplot(repu_pofzs, aes(x = simulated_collection, y = repu_PofZ)) +
+  geom_boxplot(aes(colour = repunit)) +
+  geom_text(data = num_simmed, mapping = aes(y = 1.025, label = n), angle = 90, hjust = 0, vjust = 0.5, size = 3) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 9, vjust = 0.5)) +
+  ylim(c(NA, 1.05)) +
+  ggtitle("Strata2 Simulated Assignments RC")
+
+
+```
+
+
+### Assess reference loo: Strata 3
+
+```{r, warning=F,message=F}
+Strata3_reference$collection[which(Strata3_reference$collection=="NEBS")]<-"NE_BERING"
+
+Strata3_sims_snps <- assess_reference_loo(reference = Strata3_reference, 
+                     gen_start_col = 5, 
+                     reps = 1000, 
+                     mixsize = 1000,
+                     return_indiv_posteriors = T,
+                     resampling_unit = "gene_copies")
+
+# summarise things
+repu_pofzs_snps <- Strata3_sims_snps$indiv_posteriors %>%
+  filter(repunit == simulated_repunit) %>%
+  group_by(iter, indiv, simulated_collection, repunit) %>%  # first aggregate over reporting units
+  summarise(repu_PofZ = sum(PofZ)) %>%
+  ungroup() %>%
+  arrange(repunit, simulated_collection) %>%
+  mutate(simulated_collection = factor(simulated_collection, levels = unique(simulated_collection)))
+repu_pofzs_snps$type<-"SNPs"
+
+# also get the number of simulated individuals from each collection
+num_simmed <- Strata3_sims_snps$indiv_posteriors %>%
+  group_by(iter, indiv) %>%
+  slice(1) %>%
+  ungroup() %>%
+  count(simulated_collection)
+  
+# note, the last few steps make simulated collection a factor so that collections within
+# the same repunit are grouped together in the plot.
+
+# now, plot it
+arl_RC_gg3_snps<- ggplot(repu_pofzs_snps, aes(x = simulated_collection, y = repu_PofZ)) +
+  geom_boxplot(aes(colour = repunit)) +
+  #geom_text(data = num_simmed, mapping = aes(y = 1.025, label = n), angle = 90, hjust = 0, vjust = 0.5, size = 3) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 9, vjust = 0.5),
+        legend.position = "none") +
+  ylim(c(NA, 1.05))+
+  ggtitle("SNPs")+
+  xlab("Collection Site")+
+  ylab("Assignment Probability")
+arl_RC_gg3_snps
+
+repu_pofzs_snps%>%group_by(simulated_collection)%>%summarize(mean=mean(repu_PofZ),sd=sd(repu_PofZ))
+
+```
+
+### Assess reference loo: GOA
+
+```{r, warning=F,message=F}
+GOA_sims <- assess_reference_loo(reference = GOA_reference, 
+                     gen_start_col = 5, 
+                     reps = 1000, 
+                     mixsize = 1000,
+                     return_indiv_posteriors = T,
+                     resampling_unit = "individual")
+
+# summarise things
+repu_pofzs <- GOA_sims$indiv_posteriors %>%
+  filter(repunit == simulated_repunit) %>%
+  group_by(iter, indiv, simulated_collection, repunit) %>%  # first aggregate over reporting units
+  summarise(repu_PofZ = sum(PofZ)) %>%
+  ungroup() %>%
+  arrange(repunit, simulated_collection) %>%
+  mutate(simulated_collection = factor(simulated_collection, levels = unique(simulated_collection)))
+
+# also get the number of simulated individuals from each collection
+num_simmed <- GOA_sims$indiv_posteriors %>%
+  group_by(iter, indiv) %>%
+  slice(1) %>%
+  ungroup() %>%
+  count(simulated_collection)
+  
+# note, the last few steps make simulated collection a factor so that collections within
+# the same repunit are grouped together in the plot.
+
+# now, plot it
+arl_RC_gg_goa<- ggplot(repu_pofzs, aes(x = simulated_collection, y = repu_PofZ)) +
+  geom_boxplot(aes(colour = repunit)) +
+  geom_text(data = num_simmed, mapping = aes(y = 1.025, label = n), angle = 90, hjust = 0, vjust = 0.5, size = 3) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 9, vjust = 0.5)) +
+  ylim(c(NA, 1.05))+
+  ggtitle("GOA Simulated Assignments RC")
+
+```
+
+### Assess reference loo: GOA_filtered
+
+```{r, warning=F,message=F}
+GOA_sims <- assess_reference_loo(reference = GOA_reference_filtered, 
+                     gen_start_col = 5, 
+                     reps = 1000, 
+                     mixsize = 1000,
+                     return_indiv_posteriors = T,
+                     resampling_unit = "individual")
+
+# summarise things
+repu_pofzs <- GOA_sims$indiv_posteriors %>%
+  filter(repunit == simulated_repunit) %>%
+  group_by(iter, indiv, simulated_collection, repunit) %>%  # first aggregate over reporting units
+  summarise(repu_PofZ = sum(PofZ)) %>%
+  ungroup() %>%
+  arrange(repunit, simulated_collection) %>%
+  mutate(simulated_collection = factor(simulated_collection, levels = unique(simulated_collection)))
+
+# also get the number of simulated individuals from each collection
+num_simmed <- GOA_sims$indiv_posteriors %>%
+  group_by(iter, indiv) %>%
+  slice(1) %>%
+  ungroup() %>%
+  count(simulated_collection)
+  
+# note, the last few steps make simulated collection a factor so that collections within
+# the same repunit are grouped together in the plot.
+
+# now, plot it
+arl_RC_gg_goa_filtered<- ggplot(repu_pofzs, aes(x = simulated_collection, y = repu_PofZ)) +
+  geom_boxplot(aes(colour = repunit)) +
+  geom_text(data = num_simmed, mapping = aes(y = 1.025, label = n), angle = 90, hjust = 0, vjust = 0.5, size = 3) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 9, vjust = 0.5)) +
+  ylim(c(NA, 1.05))+
+  ggtitle("GOA Simulated Assignments RC")
+
+```
+
+
+ggarrange assess reference loo plots:
+
+```{r,warning=F,message=F}
+arl_RC_all<-ggarrange(arl_RC_gg1,arl_RC_gg2,arl_RC_gg3,ncol = 1)
+arl_RC_all
+
+```
+
+
+Self Assign:
+```{r,warning=F,message=F}
+
+###Strata 1
+sa_strata1 <- self_assign(reference = Strata1_reference, gen_start_col = 5)
+
+sa_to_repu_1 <- sa_strata1 %>%
+  group_by(indiv, collection, repunit, inferred_repunit) %>%
+  summarise(repu_scaled_like = sum(scaled_likelihood)) %>%
+  filter(repunit==inferred_repunit) # just take the rows where repunit = inferred repunit
+
+sa_strata1 %>% group_by(repunit) %>% 
+  filter(repunit==inferred_repunit)%>%
+  summarise(mean=mean(scaled_likelihood))
+
+sa_RC_gg1<- sa_to_repu_1 %>% ggplot(aes(y=repu_scaled_like,x=repunit)) +
+  geom_boxplot() +
+  ggtitle("Strata1 Self-Assign RC")
+
+###Strata 2
+sa_strata2 <- self_assign(reference = Strata2_reference, gen_start_col = 5)
+
+sa_to_repu_2 <- sa_strata2 %>%
+  group_by(indiv, collection, repunit, inferred_repunit) %>%
+  summarise(repu_scaled_like = sum(scaled_likelihood)) %>%
+  filter(repunit==inferred_repunit) # just take the rows where repunit = inferred repunit
+
+sa_RC_gg2 <-sa_to_repu_2 %>% ggplot(aes(y=repu_scaled_like,x=repunit)) +
+  geom_boxplot() +
+  ggtitle("Strata2 Self-Assign RC")
+
+#Strata 3
+sa_strata3 <- self_assign(reference = Strata3_reference, gen_start_col = 5)
+
+sa_to_repu_3 <- sa_strata3 %>%
+  group_by(indiv, collection, repunit, inferred_repunit) %>%
+  summarise(repu_scaled_like = sum(scaled_likelihood)) %>%
+  filter(repunit==inferred_repunit) # just take the rows where repunit = inferred repunit
+
+sa_RC_gg3<- sa_to_repu_3 %>% ggplot(aes(y=repu_scaled_like,x=repunit)) +
+  geom_boxplot() +
+  ggtitle("Strata3 Self-Assign RC")
+
+sa_RC_all<-ggarrange(sa_RC_gg1,sa_RC_gg2,sa_RC_gg3,ncol = 1)
+sa_RC_all
+```
+
+GOA Self Assign:
+```{r}
+sa_goa <- self_assign(reference = GOA_reference, gen_start_col = 5)
+
+sa_to_repu_goa <- sa_goa %>%
+  group_by(indiv, collection, repunit, inferred_repunit) %>%
+  summarise(repu_scaled_like = sum(scaled_likelihood)) %>%
+  filter(repunit==inferred_repunit) # just take the rows where repunit = inferred repunit
+
+sa_RC_gg_goa<- sa_to_repu_goa %>% ggplot(aes(y=repu_scaled_like,x=repunit)) +
+  geom_boxplot() +
+  ggtitle("GOA Self-Assign RC")
+
+sa_goa_f <- self_assign(reference = GOA_reference_filtered, gen_start_col = 5)
+
+sa_to_repu_goa <- sa_goa_f %>%
+  group_by(indiv, collection, repunit, inferred_repunit) %>%
+  summarise(repu_scaled_like = sum(scaled_likelihood)) %>%
+  filter(repunit==inferred_repunit) # just take the rows where repunit = inferred repunit
+
+sa_RC_gg_goa_filtered<- sa_to_repu_goa %>% ggplot(aes(y=repu_scaled_like,x=repunit)) +
+  geom_boxplot() +
+  ggtitle("GOA_filtered Self-Assign RC")
+
+
+
+sa_RC_goa<-ggarrange(sa_RC_gg_goa,sa_RC_gg_goa_filtered,arl_RC_gg_goa,arl_RC_gg_goa_filtered)
+sa_RC_goa
+
+
+```
+
+
+
+### Repunit-Repunit Comparisons
+
+In the following code blocks, the repunit is the strata unit and the collection is also the strata unit, not the collection site. I'll perform first assess_reference_loo to simulate individuals and assess the power to assign each collection site to its strata unit. The shorthand for this repunit-repunit comparison is either repu-repu or RR
+
+```{r,warning=F,message=F}
+###Strata1
+table(Strata1_genepop$pop)
+Strata1_df<-genind2df(Strata1_genepop,oneColPerAll = T)
+
+Strata1_reference<-data.frame(sample_type=rep("reference", nrow(Strata1_df)), 
+           repunit=Strata1_df$pop,
+           collection=Strata1_df$pop,
+           indiv=rownames(Strata1_df))
+Strata1_reference<-cbind(Strata1_reference,Strata1_df[,2:ncol(Strata1_df)])
+
+Strata1_reference$repunit<-as.character(Strata1_reference$repunit)
+Strata1_reference$collection<-as.character(Strata1_reference$collection)
+Strata1_reference$indiv<-as.character(Strata1_reference$indiv)
+
+###Strata2
+table(Strata2_genepop$pop)
+Strata2_df<-genind2df(Strata2_genepop,oneColPerAll = T)
+
+Strata2_reference<-data.frame(sample_type=rep("reference", nrow(Strata2_df)), 
+           repunit=Strata2_df$pop,
+           collection=Strata2_df$pop,
+           indiv=rownames(Strata2_df))
+Strata2_reference<-cbind(Strata2_reference,Strata2_df[,2:ncol(Strata2_df)])
+
+Strata2_reference$repunit<-as.character(Strata2_reference$repunit)
+Strata2_reference$collection<-as.character(Strata2_reference$collection)
+Strata2_reference$indiv<-as.character(Strata2_reference$indiv)
+
+###Strata3
+table(Strata3_genepop_filtered$pop)
+Strata3_df<-genind2df(Strata3_genepop_filtered,oneColPerAll = T)
+
+Strata3_reference<-data.frame(sample_type=rep("reference", nrow(Strata3_df)), 
+           repunit=Strata3_df$pop,
+           collection=Strata3_df$pop,
+           indiv=rownames(Strata3_df))
+Strata3_reference<-cbind(Strata3_reference,Strata3_df[,2:ncol(Strata3_df)])
+
+Strata3_reference$repunit<-as.character(Strata3_reference$repunit)
+Strata3_reference$collection<-as.character(Strata3_reference$collection)
+Strata3_reference$indiv<-as.character(Strata3_reference$indiv)
+```
+
+
+Assess reference loo: Strata 1
+```{r,warning=F,message=F}
+ppho_sims <- assess_reference_loo(reference = Strata1_reference, 
+                     gen_start_col = 5, 
+                     reps = 1000, 
+                     mixsize = 1000,
+                     return_indiv_posteriors = T,
+                     resampling_unit = "individual")
+
+# summarise things
+repu_pofzs <- ppho_sims$indiv_posteriors %>%
+  filter(repunit == simulated_repunit) %>%
+  group_by(iter, indiv, simulated_collection, repunit) %>%  # first aggregate over reporting units
+  summarise(repu_PofZ = sum(PofZ)) %>%
+  ungroup() %>%
+  arrange(repunit, simulated_collection) %>%
+  mutate(simulated_collection = factor(simulated_collection, levels = unique(simulated_collection)))
+
+# also get the number of simulated individuals from each collection
+num_simmed <- ppho_sims$indiv_posteriors %>%
+  group_by(iter, indiv) %>%
+  slice(1) %>%
+  ungroup() %>%
+  count(simulated_collection)
+  
+# note, the last few steps make simulated collection a factor so that collections within
+# the same repunit are grouped together in the plot.
+
+# now, plot it
+arl_RR_gg1<-ggplot(repu_pofzs, aes(x = simulated_collection, y = repu_PofZ)) +
+  geom_boxplot(aes(colour = repunit)) +
+  geom_text(data = num_simmed, mapping = aes(y = 1.025, label = n), angle = 90, hjust = 0, vjust = 0.5, size = 3) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 9, vjust = 0.5)) +
+  ylim(c(NA, 1.05)) +
+  ggtitle("Strata1 Simulated Assignments RR")
+
+repu_pofzs%>%group_by(repunit)%>%summarise(mean=mean(repu_PofZ),sd=sd(repu_PofZ))
+
+```
+
+
+### Assess reference loo: Strata 2
+```{r,warning=F,message=F}
+Strata2_sims <- assess_reference_loo(reference = Strata2_reference, 
+                     gen_start_col = 5, 
+                     reps = 1000, 
+                     mixsize = 1000,
+                     return_indiv_posteriors = T,
+                     resampling_unit = "individual")
+
+# summarise things
+repu_pofzs <- Strata2_sims$indiv_posteriors %>%
+  filter(repunit == simulated_repunit) %>%
+  group_by(iter, indiv, simulated_collection, repunit) %>%  # first aggregate over reporting units
+  summarise(repu_PofZ = sum(PofZ)) %>%
+  ungroup() %>%
+  arrange(repunit, simulated_collection) %>%
+  mutate(simulated_collection = factor(simulated_collection, levels = unique(simulated_collection)))
+
+# also get the number of simulated individuals from each collection
+num_simmed <- Strata2_sims$indiv_posteriors %>%
+  group_by(iter, indiv) %>%
+  slice(1) %>%
+  ungroup() %>%
+  count(simulated_collection)
+  
+# note, the last few steps make simulated collection a factor so that collections within
+# the same repunit are grouped together in the plot.
+
+# now, plot it
+arl_RR_gg2<-ggplot(repu_pofzs, aes(x = simulated_collection, y = repu_PofZ)) +
+  geom_boxplot(aes(colour = repunit)) +
+  geom_text(data = num_simmed, mapping = aes(y = 1.025, label = n), angle = 90, hjust = 0, vjust = 0.5, size = 3) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 9, vjust = 0.5)) +
+  ylim(c(NA, 1.05)) +
+  ggtitle("Strata2 Simulated Assignments RR")
+
+
+```
+
+
+### Assess reference loo: Strata 3
+
+```{r,warning=F,message=F}
+Strata3_sims <- assess_reference_loo(reference = Strata3_reference, 
+                     gen_start_col = 5, 
+                     reps = 1000, 
+                     mixsize = 1000,
+                     return_indiv_posteriors = T,
+                     resampling_unit = "individual")
+
+# summarise things
+repu_pofzs <- Strata3_sims$indiv_posteriors %>%
+  filter(repunit == simulated_repunit) %>%
+  group_by(iter, indiv, simulated_collection, repunit) %>%  # first aggregate over reporting units
+  summarise(repu_PofZ = sum(PofZ)) %>%
+  ungroup() %>%
+  arrange(repunit, simulated_collection) %>%
+  mutate(simulated_collection = factor(simulated_collection, levels = unique(simulated_collection)))
+
+# also get the number of simulated individuals from each collection
+num_simmed <- Strata3_sims$indiv_posteriors %>%
+  group_by(iter, indiv) %>%
+  slice(1) %>%
+  ungroup() %>%
+  count(simulated_collection)
+  
+# note, the last few steps make simulated collection a factor so that collections within
+# the same repunit are grouped together in the plot.
+
+# now, plot it
+arl_RR_gg3<- ggplot(repu_pofzs, aes(x = simulated_collection, y = repu_PofZ)) +
+  geom_boxplot(aes(colour = repunit)) +
+  geom_text(data = num_simmed, mapping = aes(y = 1.025, label = n), angle = 90, hjust = 0, vjust = 0.5, size = 3) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 9, vjust = 0.5)) +
+  ylim(c(NA, 1.05))+
+  ggtitle("Strata3 Simulated Assignments RR")
+
+```
+
+ggarrange assess reference loo plots:
+
+```{r,warning=F,message=F}
+arl_RR_all<-ggarrange(arl_RR_gg1,arl_RR_gg2,arl_RR_gg3,ncol = 1)
+arl_RR_all
+```
+
+
+Self Assign:
+```{r,warning=F,message=F}
+
+###Strata 1
+sa_strata1 <- self_assign(reference = Strata1_reference, gen_start_col = 5)
+
+sa_to_repu_1 <- sa_strata1 %>%
+  group_by(indiv, collection, repunit, inferred_repunit) %>%
+  summarise(repu_scaled_like = sum(scaled_likelihood)) %>%
+  filter(repunit==inferred_repunit) # just take the rows where repunit = inferred repunit
+
+sa_RR_gg1<- sa_to_repu_1 %>% ggplot(aes(y=repu_scaled_like,x=repunit)) +
+  geom_boxplot() +
+  ggtitle("Strata1 Self-Assign RR")
+
+###Strata 2
+sa_strata2 <- self_assign(reference = Strata2_reference, gen_start_col = 5)
+
+sa_to_repu_2 <- sa_strata2 %>%
+  group_by(indiv, collection, repunit, inferred_repunit) %>%
+  summarise(repu_scaled_like = sum(scaled_likelihood)) %>%
+  filter(repunit==inferred_repunit) # just take the rows where repunit = inferred repunit
+
+sa_RR_gg2 <-sa_to_repu_2 %>% ggplot(aes(y=repu_scaled_like,x=repunit)) +
+  geom_boxplot() +
+  ggtitle("Strata2 Self-Assign RR")
+
+#Strata 3
+sa_strata3 <- self_assign(reference = Strata3_reference, gen_start_col = 5)
+
+sa_to_repu_3 <- sa_strata3 %>%
+  group_by(indiv, collection, repunit, inferred_repunit) %>%
+  summarise(repu_scaled_like = sum(scaled_likelihood)) %>%
+  filter(repunit==inferred_repunit) # just take the rows where repunit = inferred repunit
+
+sa_RR_gg3<- sa_to_repu_3 %>% ggplot(aes(y=repu_scaled_like,x=repunit)) +
+  geom_boxplot() +
+  ggtitle("Strata3 Self-Assign RR")
+
+sa_RR_all<-ggarrange(sa_RR_gg1,sa_RR_gg2,sa_RR_gg3,ncol = 1)
+sa_RR_all
+
+```
+
+Final figures:
+
+```{r,warning=F,message=F}
+arl_plot<-ggarrange(arl_RC_all,arl_RR_all,ncol = 2)
+arl_plot
+  
+sa_RR_all
+
+```

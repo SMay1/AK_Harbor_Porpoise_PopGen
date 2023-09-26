@@ -1,0 +1,335 @@
+---
+title: "Spatial_Analyses_AK_Porpoise"
+author: "Sam"
+date: "6/23/2020"
+output: pdf_document
+---
+
+
+
+Spatial Analyses will hopefully help to determine the presence (or absence) of significant population structure in AK, and its extent. Is there a strong isolation by distance pattern?
+
+- sPCA
+- Mantel Tests
+- Spatial Autocorrelation with GENALEX
+
+
+Requirements
+```{r, warning=F, message=F}
+setwd("G:/My Drive/Southeast AK Harbor Porpoise Structure/R_Project/Scripts")
+
+load("Relatedness_and_Fstats_Workspace.RData")
+
+library(marmap)
+library(pegas)
+library(genetics)
+library(zvau)
+library(PopGenReport)
+library(tidyverse)
+
+latlong<-as.data.frame(AK_genepop$other$xy)
+
+new_metadate_double_check<-read.csv("../Data/Q_Ppho_samples_strata_270618_double_check_062320.csv")
+#verify coordinates are correct:
+latlong.verify<-meta_data[match(indNames(AK_genepop),meta_data$LABID),c('LABID','Latitude','Longitude')] #this is the meta_data I've been using since the SNP_filtering script
+latlong.double.check<-new_metadate_double_check[match(indNames(AK_genepop),new_metadate_double_check$LABID),c('LABID','Latitude','Longitude')]
+latlong$x==latlong.verify$Longitude
+latlong$x==latlong.verify$Longitude
+latlong$x==latlong.double.check$Longitude
+
+#Get coordinates to use for projection:
+min(latlong$x)
+min(latlong$y)
+max(latlong$x)
+max(latlong$y)
+
+
+```
+
+Using code from
+<https://www.molecularecologist.com/2015/07/marmap/>
+to compute shortest distance over water
+
+Unfortunately, sampling is never perfect and 38/80 samples' GPS locations were recorded on land. Some of these are likely simply because they were stranded individuals, recorded near the water (i.e. depth = 0, 1, 2). Some of these may just be erroneous GPS locations recorded after the sampling (i.e. depth of 600m+). Regardless I can use the nearest point on the -1m isobar to approximate these sampling locations. 
+
+These relocations are not perfect, and will erroneously plot points to positive depths even when they are supposed to go to nearerst 0m isobar or even -10 or -50m isobath... however, these settings did work and should be used: res=1, samples with depth >-30, plot points to the nearest -100m isobath
+
+```{r}
+#  Fetch data on NOAA servers and write on disk
+#Change resolution for higher quality images
+#bat <- getNOAA.bathy(165,-130, 50, 75, res = 1, keep=TRUE, antimeridian = TRUE)
+
+#latlong.antimeridian<-latlong
+#latlong.antimeridian$x[which(latlong.antimeridian$x<0)]<-latlong.antimeridian$x[which(latlong.a#ntimeridian$x<0)]+360
+#
+#depths<-get.depth(bat,x = latlong.antimeridian$x,y=latlong.antimeridian$y,locator = F)
+#depths<-depths%>%mutate(LABID=rownames(latlong))
+##
+##
+#land.porpoises<-as.data.frame(depths[which(depths$depth>-30),]) #including all those that are #less than 100m depth, going to move them out 100m from shore just to be certain that none come #p #on land.
+#
+#write.csv(land.porpoises,"../Data/land_porpoises.csv")
+#new.depths<-dist2isobath(bat,x = land.porpoises$lon,y=land.porpoises$lat,isobath = -100)
+#new.depths$end.lon[which(new.depths$end.lon<0)]<-new.depths$end.lon[which(new.depths$end.lon<0)#]+360
+#
+#depths2<-get.depth(bat,x = new.depths$end.lon,y=new.depths$end.lat,locator = F)
+#depths2
+#
+##
+#write.csv(new.depths,"../Data/land_porpoises_new_depths.csv")
+#New depths are at the -100m isobath
+new.depths<-read.csv("../Data/land_porpoises_new_depths.csv")
+land.porpoises<-read.csv("../Data/land_porpoises.csv")
+new.depths$start.lon==land.porpoises$lon #these are in the same order
+rownames(new.depths)<-land.porpoises$LABID
+
+latlong[which(rownames(latlong)%in%rownames(new.depths)),]<-new.depths[,c("end.lon","end.lat")]
+latlong.antimeridian<-latlong
+latlong.antimeridian$x[which(latlong.antimeridian$x<0)]<-latlong.antimeridian$x[which(latlong.antimeridian$x<0)]+360 #replace the negative longitudes with 
+
+
+```
+
+Plot old points vs new points
+```{r}
+
+# Creating a custom palette of blues 
+blues <- c("lightsteelblue4", "lightsteelblue3", "lightsteelblue2", "lightsteelblue1")
+greys<-  c(grey(.7), grey(.9), grey(.95))
+
+bat.low.res <- getNOAA.bathy(165,-130, 50, 75, res = 10, keep=TRUE, antimeridian = TRUE)
+
+plot(bat.low.res, image = TRUE, lwd = 0.1, land = TRUE, bpal = list(c(0, max(bat.low.res), "grey"), c(min(bat.low.res), 0, blues)))
+# Add the points 
+points(new.depths$start.lon, new.depths$start.lat, pch = 21, bg = "orange2", cex = 0.8)
+# Add great circle lines 
+linesGC(new.depths[, 3:4], new.depths[, 5:6],antimeridian = T)
+#add new points
+points(latlong.antimeridian$x,latlong.antimeridian$y,pch=21,bg="red")
+```
+
+Compute individual least-cost paths, no max depth for now, res set to 20 for now. 
+
+```{r}
+
+# Compute least cost paths, it would be nice to do this along an isobath limit, but some of our samples are from very deep waters
+# Beware! Computation takes time with high resolution bathymetries!
+
+#bat <- getNOAA.bathy(165,-130, 50, 75, res = 1, keep=TRUE, antimeridian = TRUE)
+#tr <- trans.mat(bat,min.depth = 0,max.depth = NULL)
+#
+#cost.dist <- lc.dist(tr, latlong.antimeridian, res="dist")
+#write.csv(as.matrix(cost.dist),"../Data/cost.dist.porpoises.100iso.csv") 
+
+#porpoises near shore have been pushed to the -25m isobath to ensure their depths come out as negative. This is not an entirely precise projection, so depth estimates near shore are sometimes erroneous depending on tides, etc. We want to make sure locations are in the water.
+
+
+#cost.path<- lc.dist(tr, latlong.antimeridian, res="path")
+
+cost.dist<-read.csv("../Data/cost.dist.porpoises.100iso.csv",header = T,row.names = 1)
+cost.dist<-as.dist(cost.dist)
+
+AK_genepop$pop<-factor(rep("AK",80))
+gen.dist<-gd.smouse(AK_genepop,verbose = T)
+write.csv(as.matrix(gen.dist),"../Data/gen.dist.smouse.AK80_new.csv")
+
+relat.dist<-pw_relatedness_all$relatedness[,c(2,3,6)] # from Relatedness_Ne_Fis_ect script
+relat.dist$wang[which(relat.dist$wang<0)]<-0
+nams <- with(relat.dist, unique(c(as.character(ind1.id), as.character(ind2.id))))
+relat.dist<-with(relat.dist, structure(wang,
+                           Size = length(nams),
+                           Labels = nams,
+                           Diag = FALSE,
+                           Upper = FALSE,
+                           method = "user",
+                           class = "dist"))
+
+realt.dist<-as.dist(relat.dist)
+
+#save.image("Spatial_Analyses_halfway_incl_trans.mat.RData")
+#load("Spatial_Analyses_halfway_incl_trans.mat.RData")
+
+#Ensure these matrices are in the same order
+colnames(as.matrix(cost.dist,labels=T))==colnames(as.matrix(gen.dist,labels=T))
+colnames(as.matrix(cost.dist,labels=T))==colnames(as.matrix(relat.dist,labels=T))
+```
+
+## Plot Relatedness vs relatedness (as a genetic distance metric)
+```{r}
+
+plot(relat.dist~cost.dist,ylab="relatedness (wang)",xlab="geographic distance (least cost)")
+abline(lm(relat.dist~cost.dist),col="red",lwd=2)
+summary(lm(relat.dist~cost.dist))
+
+
+```
+
+
+## Mantel Tests - not significant
+```{r}
+
+#Strata 1
+plot(gen.dist~cost.dist,ylab="genetic distance (smouse)",xlab="geographic distance (least cost)")
+abline(lm(gen.dist~cost.dist),col="red",lwd=2)
+summary(lm(gen.dist~cost.dist))
+
+mt.1<-mantel.randtest(gen.dist,cost.dist)
+mt.1
+plot(mt.1,main="Mantel Test")
+
+#South AK
+#take out individuals not in Chuk and WBS
+South_AK_genepop<-AK_genepop_Ho_filtered[which(AK_genepop_Ho_filtered$other$Strata1%in%c("GOA","Eastern_BS"))]
+South_AK_genepop$pop<-factor(rep("AK",54))
+
+
+SAK.latlong.antimeridian<-latlong.antimeridian[indNames(South_AK_genepop),]%>%filter_all(any_vars(!is.na(.)))
+
+#SAK.cost.dist<-lc.dist(tr, SAK.latlong.antimeridian, res="dist")
+#write.csv(as.matrix(SAK.cost.dist),"../Data/SAK.cost.dist.csv")
+SAK.cost.dist<-read.csv("../Data/SAK.cost.dist.csv",header = T,row.names = 1)
+SAK.cost.dist<-as.dist(SAK.cost.dist)
+
+SAK.gen.dist<-gd.smouse(South_AK_genepop)
+
+plot(SAK.gen.dist~SAK.cost.dist,ylab="genetic distance (smouse)",xlab="geographic distance (least cost)")
+abline(lm(SAK.gen.dist~SAK.cost.dist),col="red",lwd=2)
+summary(lm(SAK.gen.dist~SAK.cost.dist))
+
+
+mt.2<-mantel.randtest(gen.dist,cost.dist)
+mt.2
+plot(mt.2,main="Mantel Test, SAK")
+
+
+
+
+```
+
+# Genetic Spatial Autocorrelation (SAC)
+### Is there within-population stucture?
+
+```{r}
+
+#AK_genepop_Ho_filtered$pop<-as.factor(rep("AK",80))
+#writeGenPop(gi = AK_genepop_Ho_filtered,file.name = "../Data/AK_genepop_80.txt",comment = "AK_genepop_80_inds_254_loc")
+
+SAC_results<-read.csv("../Data/GENALEX/Genalex_results_500km_dist_class.csv")
+
+```
+
+These analyses were run using the multi-population SAC model in Genalex version 6.5 (Peakall and Smouse 2012) with 999 permutations and 999 bootstraps. 
+
+Here, r is the spatial autocorrelation coefficient (y axis) and the x axis gives pairwaise distance between individuals, binned into distance classes. A positive r indicates individuals are more related than you would expect by chance alone. A negative r indicated individuals are less related than you would expect by chance alone.
+
+Gray shading represents the 95% confidence intervals about the 0 autocorrelation value,representing the null hypothesis of no spatial structure; 95% confidence limits about r indicated by error bars from 
+
+Peakall and Smouse recommend counting an r value as 'significant' if they encompass BOTH of these measures. 
+
+**Black points are outside of the gray shading, red points are outside the gray area AND their error bars don't cross zero**
+
+```{r}
+
+polygon_colorz<-"lightgrey"
+
+
+r<-SAC_results$r
+x<-SAC_results$Distance.Class..Start.Point.
+U<-SAC_results$U
+L<-SAC_results$L
+n<-SAC_results$n
+Ur<-SAC_results$Ur
+Lr<-SAC_results$Lr
+Lr_error<-SAC_results$Lr.error
+Ur_error<-SAC_results$Ur.error
+
+color_index<-rep("red",length(r))
+for (i in 1:length(Ur)){
+  if((r[i]-Lr_error[i])<0 & (r[i]+Ur_error[i])>0){color_index[i]<-NA}
+}
+
+red_points<-which(color_index=="red")
+
+
+signif_r<-SAC_results$r[which(SAC_results$P_down<=.05 | SAC_results$P_up<=.05)]
+signif_x<-x[which(SAC_results$P_down<=.05 | SAC_results$P_up<=.05)]
+
+
+plot(x = "",ylim=c(-.02,.02),xlim=c(0,3500),xlab="distance class (km)",ylab="r",bty="n",axes=F,cex.lab=1.5,main="SAC AK Porpoises")
+  polygon(c(x,rev(x)),c(U,rev(L)),col=polygon_colorz,border=NA)
+  par(xpd=T)
+  abline(h=0,col="white")
+  par(xpd=NA)
+  axis(side=1)
+  axis(side=2)
+  lines(x,r,col="black",lwd=2)
+  arrows(x,Lr,x,Ur,length=0.05,angle=90,code=3)
+  points(x= signif_x,y= signif_r,pch=16,col="black")
+  points(x[red_points],r[red_points],pch=16,col="red")
+  
+```
+
+
+
+## sPCA
+
+
+```{r}
+
+Strata1_genepop_scaled<-missingno(pop = Strata1_genepop,type = "mean",)
+try1<-as.tibble(Strata1_genepop_scaled$tab) %>% 
+ mutate_if(is.numeric, round)%>%mutate_if(is.numeric,as.integer)
+Strata1_genepop_scaled$tab<-as.matrix(try1)
+Strata1_genepop_scaled$tab
+
+Strata1_xy_jitter<-Strata1_genepop$other$xy
+Strata1_xy_jitter$x<-jitter(Strata1_xy_jitter$x)
+Strata1_xy_jitter$y<-jitter(Strata1_xy_jitter$y)
+
+mySpca <- spca(Strata1_genepop_scaled, xy=Strata1_xy_jitter, ask=T, type=1, scannf=F, nfposi = 3, nfnega = 0, scale=T) # method used by LL
+#mySpca <- spca(Strata1_genepop_scaled, xy =Strata1_xy_jitter , ask=FALSE, type=1, scannf=FALSE)
+
+dev.off()
+barplot(mySpca$eig, main="sPCA eigenvalues",
+col=spectral(length(mySpca$eig)))
+legend("topright", fill=spectral(2),
+leg=c("Global structures", "Local structures"))
+abline(h=0,col="grey")
+# Positive eigenvalues (on the left) correspond to global structures, while negative eigenvalues (on the right) indicate local patterns.
+
+
+
+randtest<-spca_randtest(mySpca, nperm = 99)
+a=paste0("global observation = ",randtest$global$obs)
+b=paste0("global alternative hypothesis = ",randtest$global$alter)
+c=paste0("global based on ",randtest$global$rep," replicates")
+d=paste0("global simulated pvalue = ",randtest$global$pvalue)
+e=paste0("local observation = ",randtest$local$obs)
+f=paste0("local alternative hypothesis = ",randtest$local$alter)
+g=paste0("local based on ",randtest$local$rep," replicates")
+h=paste0("local simulated pvalue = ",randtest$local$pvalue)
+# pdf(file=paste0(title,"_",stratum,"_randtest.pdf"))
+plot(randtest[[1]], main="Global Structure ALL") # global structures
+plot(NA, xlim=c(0,5), ylim=c(0,5), bty='n',
+     xaxt='n', yaxt='n', xlab='', ylab='')
+text(1,4,a, pos=4)
+text(1,3,b, pos=4)
+text(1,2,c, pos=4)
+text(1,1,d, pos=4)
+points(rep(1,4),1:4, pch=15)
+plot(randtest[[2]], main="Local Structure ALL") # Local structures
+plot(NA, xlim=c(0,5), ylim=c(0,5), bty='n',
+     xaxt='n', yaxt='n', xlab='', ylab='')
+text(1,4,e, pos=4)
+text(1,3,f, pos=4)
+text(1,2,g, pos=4)
+text(1,1,h, pos=4)
+points(rep(1,4),1:4, pch=15)
+
+plot(mySpca, useLag=TRUE)
+
+```
+
+
+
+

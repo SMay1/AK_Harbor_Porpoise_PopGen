@@ -1,0 +1,711 @@
+---
+title: "AK_Harbor_Porpoises_SNP_DAPCs"
+author: "Samuel May"
+date: "3/30/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Alaska Harbor Porpoises: NGOS Project to explore population structure of Harbor Porpoises in Southeast Alaska
+
+
+## Requirements:
+Must load workspace from Data_Exploration_Basic_Stats_and_Filtering script
+
+```{r, message=FALSE,results="hide",warning=F}
+#Session > Set Working Directory > to Source File Location
+
+setwd("G:/My Drive/Southeast AK Harbor Porpoise Structure/R_Project/Scripts")
+#install.packages("remotes")
+#remotes::install_github("romunov/zvau")
+library(zvau)
+
+library(tidyverse)
+library(genetics)
+library(adegenet)
+library(hierfstat)
+library(adespatial)
+library(devtools)
+library(RColorBrewer)
+library(usedist)
+library(graph4lg)
+library(xlsx)
+library(parallel)
+library(foreach)
+library(doParallel)
+library(pander)
+library(LEA)
+library(ggpubr)
+library(diveRsity)
+library(usedist)
+
+load("SNP_Data_Exploration_Basic_Stats_and_Filtering_Workspace.RData")
+
+```
+
+Data: **292SNP GTseq panel** + **Q_Ppho strata metadata**
+Run Data_Exploration Script first and use defined genind objects from there.
+
+
+# DAPCs By a priori Strata
+
+## Strata 1
+```{r}
+Strata1_genepop<-AK_genepop
+Strata1_genepop$pop<-as.factor(Strata1_genepop$other$Strata1)
+Strata1_genepop<-Strata1_genepop[!Strata1_genepop$pop=="WESTERN_BS"]
+
+table(Strata1_genepop$pop) 
+Strata1_DAPC<- dapc(Strata1_genepop,pop=Strata1_genepop$pop,n.pca = 65,n.da=3) #Retain most and identify optimal
+a_score_strata1<-optim.a.score(Strata1_DAPC,n.sim=1000)
+Strata1_DAPC<- dapc(Strata1_genepop,pop=Strata1_genepop$pop,n.pca = a_score_strata1$best,n.da=3)
+
+scatter(Strata1_DAPC,1,2,grp = Strata1_genepop$pop,pch=16,
+        posi.da="bottomleft",col=brewer.pal(4,"Dark2"),
+        legend=T, clabel = 0,ratio.da = .25,
+        posi.pca = "bottomright",scree.pca = T)
+mtext(text= "Strata 1", side = 3,adj = -20,padj = -1,cex = 2.5)
+
+find.clusters(Strata1_genepop,n.pca = a_score_strata1$best)
+
+Strata1_DAPC$var  ### Proportion of variance conserved by the principal components (36.4%)
+Strata1_DAPC$prior #### Numeric vector giving prior group probabilities, low likely because of sample size
+
+```
+
+
+Corresponding Structure Plot Strata 1
+```{r}
+#convert genind2structure and structure2geno ... there might be a more direct way of doing this, but this works
+
+
+genind2structure(Strata1_genepop,file = "../Data/STRUCTURE/AK_genepop_Strata1.STRUCTURE",pops = T)
+#using this new function excludes ind and pop labels from row 1, so added those manually for now
+struct2geno(input.file = "../Data/STRUCTURE/AK_genepop_Strata1.STRUCTURE", ploidy = 2, extra.row = 1, extra.column = 4, FORMAT = 2)
+
+
+obj.snmf.1a <- snmf(input.file = "../Data/STRUCTURE/AK_genepop_Strata1.STRUCTURE.geno", K =
+1:10,repetitions = 1, alpha = 100,iterations = 10000, project = "new",entropy = TRUE)
+plot(obj.snmf.1, col = "blue4", cex = 1.4, pch = 19) #how many groups are optimal? 1...
+
+obj.snmf.1b <- snmf(input.file = "../Data/STRUCTURE/AK_genepop_Strata1.STRUCTURE.geno", K =
+nPop(Strata1_genepop),repetitions = 1, alpha = 100,iterations = 10000, project = "new")
+qmatrix.1b <- as.data.frame(Q(obj.snmf.1b,K=nPop(Strata1_genepop)))
+rownames(qmatrix.1b)<-indNames(Strata1_genepop)
+colnames(qmatrix.1b)<-popNames(Strata1_genepop)
+qmatrix.1b<-qmatrix.1b[base::order(qmatrix.1b$CHUK,qmatrix.1b$EASTERN_BS,qmatrix.1b$GOA),]
+
+colz<-viridis::viridis(nPop(Strata1_genepop))
+
+barplot(t(qmatrix.1b), col = colz, border = NA, space = 0,axes=F,xaxt="n")
+axis(side=2)
+mtext(side=3,"Strata1 snmf Proportions",cex=1.5)
+par(xpd=NA)
+legend(x = 15,y=-.05,fill = colz,legend=popNames(Strata1_genepop),ncol= 2)
+
+
+
+```
+This structure plot is not useful, using the deltaK method would yield one optimal cluster.
+
+
+## Strata 2
+excluding 3 kodiak individuals
+```{r}
+AK_genepop$pop<-as.factor(AK_genepop$other$Strata2)
+Strata2_genepop<-AK_genepop[which(is.na(AK_genepop$pop)==F)]
+Strata2_genepop<-AK_genepop[!AK_genepop$other$Strata3%in%c("KODIAK","WBS","YAKUTAT")]
+table(Strata2_genepop$other$Strata2) 
+
+
+Strata2_DAPC<- dapc(Strata2_genepop,pop=Strata2_genepop$pop,n.pca = 60,n.da=3) #Retain most and identify optimal
+a_score_strata2<-optim.a.score(n.sim=1000,Strata2_DAPC)
+Strata2_DAPC<- dapc(Strata2_genepop,pop=Strata2_genepop$pop,n.pca = a_score_strata2$best ,n.da = 3) #Retain most and identify optimal
+
+scatter(Strata2_DAPC,1,2,grp = Strata2_genepop$pop,pch=16,
+        posi.da="topright",
+        col=brewer.pal(nPop(Strata2_genepop),"Dark2"),
+        legend=T, clabel = 0,ratio.da = .25,
+        posi.pca = "bottomright",scree.pca = T,
+        posi.leg="bottomleft")
+mtext(text= "Strata 2", side = 3,adj = -20,padj = -1,cex = 2.5)
+
+
+find.clusters(Strata2_genepop,n.pca = a_score_strata2$best)
+
+Strata2_DAPC$var  ### Proportion of variance conserved by the principal components (36.4%)
+Strata2_DAPC$prior #### Numeric vector giving prior group probabilities, low likely because of sample size
+```
+
+Corresponding Structure Plot Strata 2
+```{r}
+#convert genind2structure and structure2geno ... there might be a more direct way of doing this, but this works
+
+
+genind2structure(Strata2_genepop,file = "../Data/STRUCTURE/AK_genepop_Strata2.STRUCTURE",pops = T)
+#using this new function excludes ind and pop labels from row 1, so added those manually for now
+struct2geno(input.file = "../Data/STRUCTURE/AK_genepop_Strata2.STRUCTURE", ploidy = 2, extra.row = 1, extra.column = 4, FORMAT = 2) 
+
+
+obj.snmf.2a <- snmf(input.file = "../Data/STRUCTURE/AK_genepop_Strata2.STRUCTURE.geno", K =
+1:10,repetitions = 1, alpha = 100,iterations = 10000, project = "new",entropy = TRUE,CPU = 3)
+plot(obj.snmf.2a, col = "blue4", cex = 1.4, pch = 19) #ONE optimal group
+
+obj.snmf.2b <- snmf(input.file = "../Data/STRUCTURE/AK_genepop_Strata2.STRUCTURE.geno", K =
+nPop(Strata2_genepop),repetitions = 1, alpha = 100,iterations = 10000, project = "new",CPU = 3)
+qmatrix.2b <- as.data.frame(Q(obj.snmf.2b,K=nPop(Strata2_genepop)))
+rownames(qmatrix.2b)<-indNames(Strata2_genepop)
+colnames(qmatrix.2b)<-popNames(Strata2_genepop)
+qmatrix.2b<-qmatrix.2b[base::order(qmatrix.2b$WBS,qmatrix.2b$BAR,qmatrix.2b$EBS,qmatrix.2b$WGOA,qmatrix.2b$YAKUTAT,qmatrix.2b$WGOA),]
+
+colz<-viridis::viridis(nPop(Strata2_genepop))
+
+barplot(t(qmatrix.2b), col = colz, border = NA, space = 0,axes=F,xaxt="n")
+axis(side=2)
+mtext(side=3,"Strata2 snmf Proportions",cex=1.5)
+par(xpd=NA)
+legend(x = 15,y=-.05,fill = colz,legend=popNames(Strata2_genepop),ncol= 2)
+
+Strata2_genepop$pop
+indNames(Strata2_genepop)
+```
+This structure plot is not useful, using the deltaK method would yield one optimal cluster.
+
+
+## Strata 3
+
+```{r}
+AK_genepop$pop<-as.factor(AK_genepop$other$Strata3)
+Strata3_genepop<-AK_genepop[which(is.na(AK_genepop$pop)==F)]
+table(Strata3_genepop$pop)
+
+Strata3_DAPC<- dapc(Strata3_genepop,pop=Strata3_genepop$pop,n.pca=60,n.da=8) #Retain most and identify optimal
+a_score_strata3<-optim.a.score(n.sim=1000,Strata3_DAPC)
+Strata3_DAPC<- dapc(Strata2_genepop,pop=Strata3_genepop$pop,n.pca = a_score_strata3$best ,n.da = 5) #Retain most and identify optimal
+
+
+colz<-c("gold","tan","green","blue","black","purple","hotpink","orange","black")
+
+scatter(Strata3_DAPC,1,2,grp = Strata3_genepop$pop,pch=16,
+        posi.da="bottomleft",
+        col=colz,
+        legend=T, clabel = 0,ratio.da = .25,
+        posi.pca = "topright",scree.pca = T,
+        posi.leg = "bottomright")
+
+
+find.clusters(Strata3_genepop,n.pca = a_score_strata3$best)
+
+
+```
+
+Same as above Strata3 but excluding those with <5 samples:
+```{r}
+pop_counts<-table(Strata3_genepop$pop)
+exclude_pops<-names(pop_counts[which(pop_counts<5)])
+exclude_pops
+Strata3_genepop_filtered<-Strata3_genepop[which(!Strata3_genepop$pop%in%exclude_pops)]
+
+Strata3_DAPC_filtered<-dapc(Strata3_genepop_filtered,pop=Strata3_genepop_filtered$pop,n.pca=50,n.da=4) #Retain most and identify optimal
+a_score_strata3_filtered<-optim.a.score(n.sim=1000,Strata3_DAPC_filtered)
+Strata3_DAPC_filtered<- dapc(Strata3_genepop_filtered,pop=Strata3_genepop_filtered$pop,n.pca = a_score_strata3_filtered$best ,n.da = 5) #Retain most and identify optimal
+
+
+
+colz<-c("gold","tan","green","blue","black")
+
+scatter(Strata3_DAPC_filtered,1,2,grp = Strata3_genepop_filtered$pop,pch=16,
+        posi.da="bottomleft",
+        col=colz,
+        legend=T, clabel = 0,ratio.da = .25,
+        posi.pca = "topright",scree.pca = T,
+        posi.leg = "bottomright")
+
+find.clusters(Strata3_genepop_filtered,n.pca = a_score_strata3_filtered$best)
+
+Strata3_DAPC_filtered$var  ### Proportion of variance conserved by the principal components (36.4%)
+Strata3_DAPC_filtered$prior #### Numeric vector giving prior group probabilities, low likely because of sample size
+
+```
+Corresponding Structure Plot Strata 3 filtered
+```{r}
+#convert genind2structure and structure2geno ... there might be a more direct way of doing this, but this works
+
+
+genind2structure(Strata3_genepop_filtered,file = "../Data/STRUCTURE/AK_genepop_Strata3.STRUCTURE",pops = T)
+#using this new function excludes ind and pop labels from row 1, so added those manually for now
+struct2geno(input.file = "../Data/STRUCTURE/AK_genepop_Strata3.STRUCTURE", ploidy = 2, extra.row = 1, extra.column = 4, FORMAT = 2) 
+
+
+obj.snmf.3a <- snmf(input.file = "../Data/STRUCTURE/AK_genepop_Strata3.STRUCTURE.geno", K =
+1:10,repetitions = 1, alpha = 100,iterations = 10000, project = "new",entropy = TRUE,CPU = 3)
+plot(obj.snmf.3a, col = "blue4", cex = 1.4, pch = 19) #ONE, maybe 2 optimal groups... I was hopeful for this one :(
+
+obj.snmf.3b <- snmf(input.file = "../Data/STRUCTURE/AK_genepop_Strata3.STRUCTURE.geno", K =
+nPop(Strata3_genepop_filtered),repetitions = 1, alpha = 100,iterations = 10000, project = "new",CPU = 3)
+qmatrix.3b <- as.data.frame(Q(obj.snmf.3b,K=nPop(Strata3_genepop_filtered)))
+rownames(qmatrix.3b)<-indNames(Strata3_genepop_filtered)
+colnames(qmatrix.3b)<-popNames(Strata3_genepop_filtered)
+qmatrix.3b<-qmatrix.3b[base::order(qmatrix.3b$BARROW,qmatrix.3b$NEBS,qmatrix.3b$COOK,qmatrix.3b$COPPER,qmatrix.3b$N_SEAK),]
+
+colz<-viridis::viridis(nPop(Strata3_genepop_filtered))
+
+barplot(t(qmatrix.3b), col = colz, border = NA, space = 0,axes=F,xaxt="n")
+axis(side=2)
+mtext(side=3,"Strata3 snmf Proportions",cex=1.5)
+par(xpd=NA)
+legend(x = 15,y=-.05,fill = colz,legend=popNames(Strata3_genepop_filtered),ncol= 2)
+
+Strata3_genepop$pop
+indNames(Strata3_genepop_filtered)
+```
+
+## Southern AK DAPC
+
+```{r, warning=F}
+South_AK_genepop<-Strata3_genepop_filtered[which(!Strata3_genepop_filtered$pop%in%c("BARROW"))]
+table(South_AK_genepop$pop) 
+
+South_AK_DAPC<- dapc(South_AK_genepop,pop=South_AK_genepop$pop,n.pca=45,n.da=7) #Retain most and identify optimal
+a_score_south_AK<-optim.a.score(n.sim=1000,South_AK_DAPC)
+South_AK_DAPC<- dapc(South_AK_genepop,pop=South_AK_genepop$pop,n.pca = a_score_south_AK$best ,n.da = 5) #Retain most and identify optimal
+
+
+colz<-c("tan","green","blue","black")
+
+
+scatter(South_AK_DAPC,1,2,grp = South_AK_genepop$pop,pch=16,
+        posi.da="topright",
+        col=colz,
+        legend=T, clabel = 0,ratio.da = .25,
+        posi.pca = "bottomright",scree.pca = T,
+        posi.leg = "bottomleft")
+
+find.clusters(South_AK_genepop,n.pca = a_score_south_AK$best)
+
+South_AK_DAPC$var  ### Proportion of variance conserved by the principal components (36.4%)
+South_AK_DAPC$prior #### Numeric vector giving prior group probabilities, low likely because of sample size
+```
+
+Corresponding Structure Plot South AK filtered
+```{r}
+#convert genind2structure and structure2geno ... there might be a more direct way of doing this, but this works
+
+
+genind2structure(South_AK_genepop,file = "../Data/STRUCTURE/AK_genepop_South_AK.STRUCTURE",pops = T)
+#using this new function excludes ind and pop labels from row 1, so added those manually for now
+struct2geno(input.file = "../Data/STRUCTURE/AK_genepop_South_AK.STRUCTURE", ploidy = 2, extra.row = 1, extra.column = 4, FORMAT = 2) 
+
+
+obj.snmf.Sa <- snmf(input.file = "../Data/STRUCTURE/AK_genepop_South_AK.STRUCTURE.geno", K =
+1:10,repetitions = 1, alpha = 100,iterations = 10000, project = "new",entropy = TRUE,CPU = 3)
+plot(obj.snmf.Sa, col = "blue4", cex = 1.4, pch = 19) #ONE, maybe 2 optimal groups... I was hopeful for this one :(
+
+obj.snmf.Sb <- snmf(input.file = "../Data/STRUCTURE/AK_genepop_South_AK.STRUCTURE.geno", K =
+nPop(South_AK_genepop),repetitions = 1, alpha = 100,iterations = 10000, project = "new",CPU = 3)
+qmatrix.Sb <- as.data.frame(Q(obj.snmf.Sb,K=nPop(South_AK_genepop)))
+rownames(qmatrix.Sb)<-indNames(South_AK_genepop)
+colnames(qmatrix.Sb)<-popNames(South_AK_genepop)
+qmatrix.Sb<-qmatrix.Sb[base::order(qmatrix.Sb$NEBS,qmatrix.Sb$COOK,qmatrix.Sb$COPPER,qmatrix.Sb$N_SEAK),]
+
+colz<-viridis::viridis(nPop(South_AK_genepop))
+
+barplot(t(qmatrix.Sb), col = colz, border = NA, space = 0,axes=F,xaxt="n")
+axis(side=2)
+mtext(side=3,"Strata3 snmf Proportions",cex=1.5)
+par(xpd=NA)
+legend(x = 15,y=-.05,fill = colz,legend=popNames(South_AK_genepop),ncol= 2)
+
+South_AK_genepop$pop
+indNames(South_AK_genepop)
+```
+This one is actually a bit interesting, as it shows potential admixture within the GOA and NEBS... but still not very useful. K=1
+
+Combined Plotting of DAPCs by strata:
+
+```{r}
+par(mfrow=c(2,2))
+#Strata 1
+scatter(Strata1_DAPC,1,2,grp = Strata1_genepop$pop,pch=16,
+        posi.da="bottomleft",col=brewer.pal(4,"Dark2"),
+        legend=T, clabel = 0,ratio.da = .25,
+        posi.pca = "bottomright",scree.pca = T,
+        posi.leg = "topleft")
+mtext(text= "A", side = 3,adj = -3,padj = -2.5,cex = 1.3)
+
+#Strata 2
+scatter(Strata2_DAPC,1,2,grp = Strata2_genepop$pop,pch=16,
+        posi.da="bottomleft",
+        col=brewer.pal(nPop(Strata2_genepop),"Dark2"),
+        legend=T, clabel = 0,ratio.da = .25,
+        posi.pca = "bottomright",scree.pca = T,
+        posi.leg="topleft")
+mtext(text= "B", side = 3,adj = -3,padj = -2.5,cex = 1.3)
+
+#Strata 3 (filtered >5)
+colz<-c("gold","tan","green","blue","black")
+scatter(Strata3_DAPC_filtered,1,2,grp = Strata3_genepop_filtered$pop,pch=16,
+        posi.da="bottomleft",
+        col=colz,
+        legend=T, clabel = 0,ratio.da = .25,
+        posi.pca = "bottomright",scree.pca = T,
+        posi.leg = "topleft")
+mtext(text= "C", side = 3,adj = -3,padj = -2.5,cex = 1.3)
+
+#Southern AK
+colz<-c("tan","green","blue","black")
+
+scatter(South_AK_DAPC,1,2,grp = South_AK_genepop$pop,pch=16,
+        posi.da="bottomleft",
+        col=colz,
+        legend=T, clabel = 0,ratio.da = .25,
+        posi.pca = "bottomright",scree.pca = T,
+        posi.leg = "topleft")
+mtext(text= "D", side = 3,adj =-3,padj = -2.5,cex = 1.3)
+
+```
+
+
+Combined plotting of STRUCTURE plots for 4 strata:
+```{r STRUCTURE_PLOTS_BASE_R}
+par(mfrow=c(2,2),mar=c(4,0,1.5,0),oma=c(1,3.5,0,0))
+
+colz<-viridis::viridis(nPop(Strata1_genepop))
+
+barplot(t(qmatrix.1b), col = colz, border = NA, space = 0,axes=F,xaxt="n",main="Strata1")
+axis(side=2)
+mtext(side=2,"Admixture Coef.",cex=1,line = 2)
+par(xpd=NA)
+legend(x = 3,y=-.05,fill = colz,legend=popNames(Strata1_genepop),ncol= 2)
+
+colz<-viridis::viridis(nPop(Strata2_genepop))
+
+barplot(t(qmatrix.2b), col = colz, border = NA, space = 0,axes=F,xaxt="n",main="Strata 2")
+#axis(side=2)
+#mtext(side=3,"snmf Proportions",cex=1.5)
+par(xpd=NA)
+legend(x = 13,y=-.05,fill = colz,legend=popNames(Strata2_genepop),ncol= 2)
+
+colz<-viridis::viridis(nPop(Strata3_genepop_filtered))
+
+barplot(t(qmatrix.3b), col = colz, border = NA, space = 0,axes=F,xaxt="n", main="Strata 3")
+axis(side=2)
+mtext(side=2,"Admixture Coef.",cex=1,line=2)
+par(xpd=NA)
+legend(x = 10,y=-.05,fill = colz,legend=popNames(Strata3_genepop_filtered),ncol= 2)
+
+
+colz<-viridis::viridis(nPop(South_AK_genepop))
+
+barplot(t(qmatrix.Sb), col = colz, border = NA, space = 0,axes=F,xaxt="n",main="South Alaska")
+#axis(side=2)
+#mtext(side=3,"Strata3 snmf Proportions",cex=1.5)
+par(xpd=NA)
+legend(x = 10,y=-.05,fill = colz,legend=popNames(South_AK_genepop),ncol= 2)
+
+
+
+```
+The above admixture plots are sorted by *posteriori* group assignments, not by priors. below I redo this in ggplot for more intuitive plots sorted by prior group assignment (Also sorted within groups by lat and long)
+
+```{r STRUCTURE_PLOTS_gg}
+
+###STRATA 1
+qmatrix.1b_gg<-qmatrix.1b
+qmatrix.1b_gg$prior<-Strata1_genepop$pop[match(rownames(qmatrix.1b_gg),indNames(Strata1_genepop))]
+qmatrix.1b_gg$lat<-Strata1_genepop$other$xy$y[match(rownames(qmatrix.1b_gg),indNames(Strata1_genepop))]
+qmatrix.1b_gg$long<-Strata1_genepop$other$xy$x[match(rownames(qmatrix.1b_gg),indNames(Strata1_genepop))]
+qmatrix.1b_gg<-rownames_to_column(qmatrix.1b_gg,"labID")
+
+qmatrix.1b_gg<-qmatrix.1b_gg %>% gather(key = "posterior",value = "coef",CHUK,EASTERN_BS,GOA)
+qmatrix.1b_gg<-qmatrix.1b_gg[base::order(qmatrix.1b_gg$long,qmatrix.1b_gg$lat,qmatrix.1b_gg$labID,qmatrix.1b_gg$prior),]
+qmatrix.1b_gg$labID<-factor(qmatrix.1b_gg$labID,levels = unique(qmatrix.1b_gg$labID))
+qmatrix.1b_gg$prior<-factor(qmatrix.1b_gg$prior,levels = c("CHUK","EASTERN_BS","GOA"))
+
+
+structure_strata1 <- qmatrix.1b_gg %>% 
+  ggplot(aes(x=labID,y=coef,fill=posterior,col=posterior)) +
+  geom_bar(position="fill", stat="identity") + 
+  xlab("") + ylab("Admixture Coefficient") +
+  theme(axis.text.x= element_blank(),
+        axis.ticks.x= element_blank(),
+        panel.spacing = unit(0, "lines"),
+        legend.position="bottom") +
+  facet_grid(~prior, scales="free",space="free_x",switch = "x") + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1))
+
+###STRATA 2
+qmatrix.2b_gg<-qmatrix.2b
+qmatrix.2b_gg$prior<-Strata2_genepop$pop[match(rownames(qmatrix.2b_gg),indNames(Strata2_genepop))]
+qmatrix.2b_gg$lat<-Strata2_genepop$other$xy$y[match(rownames(qmatrix.2b_gg),indNames(Strata2_genepop))]
+qmatrix.2b_gg$long<-Strata2_genepop$other$xy$x[match(rownames(qmatrix.2b_gg),indNames(Strata2_genepop))]
+qmatrix.2b_gg<-rownames_to_column(qmatrix.2b_gg,"labID")
+
+qmatrix.2b_gg<-qmatrix.2b_gg %>% gather(key = "posterior",value = "coef",BAR,EBS,EGOA,WGOA)
+qmatrix.2b_gg<-qmatrix.2b_gg[base::order(qmatrix.2b_gg$long,qmatrix.2b_gg$lat,qmatrix.2b_gg$labID,qmatrix.2b_gg$prior),]
+qmatrix.2b_gg$labID<-factor(qmatrix.2b_gg$labID,levels = unique(qmatrix.2b_gg$labID))
+qmatrix.2b_gg$prior<-factor(qmatrix.2b_gg$prior,levels = c("BAR","EBS","EGOA","WGOA"))
+
+
+structure_Strata2 <- qmatrix.2b_gg %>% 
+  ggplot(aes(x=labID,y=coef,fill=posterior,col=posterior)) +
+  geom_bar(position="fill", stat="identity") + 
+  xlab("") + ylab("") +
+  theme(axis.text.x= element_blank(),
+        axis.ticks.x= element_blank(),
+        panel.spacing = unit(0, "lines"),
+        legend.position="bottom") +
+  facet_grid(~prior, scales="free",space="free_x",switch = "x") + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1))
+
+
+
+###STRATA 3
+qmatrix.3b_gg<-qmatrix.3b
+qmatrix.3b_gg$prior<-Strata3_genepop_filtered$pop[match(rownames(qmatrix.3b_gg),indNames(Strata3_genepop_filtered))]
+qmatrix.3b_gg$lat<-Strata3_genepop_filtered$other$xy$y[match(rownames(qmatrix.3b_gg),indNames(Strata3_genepop_filtered))]
+qmatrix.3b_gg$long<-Strata3_genepop_filtered$other$xy$x[match(rownames(qmatrix.3b_gg),indNames(Strata3_genepop_filtered))]
+qmatrix.3b_gg<-rownames_to_column(qmatrix.3b_gg,"labID")
+
+qmatrix.3b_gg<-qmatrix.3b_gg %>% gather(key = "posterior",value = "coef",BARROW,NEBS,COOK,COPPER,N_SEAK)
+qmatrix.3b_gg<-qmatrix.3b_gg[base::order(qmatrix.3b_gg$long,qmatrix.3b_gg$lat,qmatrix.3b_gg$labID,qmatrix.3b_gg$prior),]
+qmatrix.3b_gg$labID<-factor(qmatrix.3b_gg$labID,levels = unique(qmatrix.3b_gg$labID))
+qmatrix.3b_gg$prior<-factor(qmatrix.3b_gg$prior,levels = c("BARROW","NEBS","COOK","COPPER","N_SEAK"))
+
+structure_Strata3 <- qmatrix.3b_gg %>% 
+  ggplot(aes(x=labID,y=coef,fill=posterior,col=posterior)) +
+  geom_bar(position="fill", stat="identity") + 
+  xlab("") + ylab("Admixture Coefficient") +
+  theme(axis.text.x= element_blank(),
+        axis.ticks.x= element_blank(),
+        panel.spacing = unit(0, "lines"),
+        legend.position="bottom") +
+  facet_grid(~prior, scales="free",space="free_x",switch = "x") + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1))
+
+
+###South AK
+qmatrix.Sb_gg<-qmatrix.Sb
+qmatrix.Sb_gg$prior<-South_AK_genepop$pop[match(rownames(qmatrix.Sb_gg),indNames(South_AK_genepop))]
+qmatrix.Sb_gg$lat<-South_AK_genepop$other$xy$y[match(rownames(qmatrix.Sb_gg),indNames(South_AK_genepop))]
+qmatrix.Sb_gg$long<-South_AK_genepop$other$xy$x[match(rownames(qmatrix.Sb_gg),indNames(South_AK_genepop))]
+qmatrix.Sb_gg<-rownames_to_column(qmatrix.Sb_gg,"labID")
+
+qmatrix.Sb_gg<-qmatrix.Sb_gg %>% gather(key = "posterior",value = "coef",NEBS,COOK,COPPER,N_SEAK)
+qmatrix.Sb_gg<-qmatrix.Sb_gg[base::order(qmatrix.Sb_gg$long,qmatrix.Sb_gg$lat,qmatrix.Sb_gg$labID,qmatrix.Sb_gg$prior),]
+qmatrix.Sb_gg$labID<-factor(qmatrix.Sb_gg$labID,levels = unique(qmatrix.Sb_gg$labID))
+qmatrix.Sb_gg$prior<-factor(qmatrix.Sb_gg$prior,levels = c("NEBS","COOK","COPPER","N_SEAK"))
+
+structure_South_AK <- qmatrix.Sb_gg %>% 
+  ggplot(aes(x=labID,y=coef,fill=posterior,col=posterior)) +
+  geom_bar(position="fill", stat="identity") + 
+  xlab("") + ylab("") +
+  theme(axis.text.x= element_blank(),
+        axis.ticks.x= element_blank(),
+        panel.spacing = unit(0, "lines"),
+        legend.position="bottom") +
+  facet_grid(~prior, scales="free",space="free_x",switch = "x") + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1))
+
+
+ggarrange(structure_strata1,structure_Strata2,structure_Strata3,structure_South_AK,labels="AUTO",hjust = -4.5 )
+
+```
+
+
+Which Loci contribute most to between cluster variance?
+```{r DAPC_LOADINGS}
+# We can assess which alleles pull apart the DAPC clusters using the command loadingplot. 
+
+par(mfrow=c(4,2),mar=c(1,1,1,1),oma=c(0,3,0,0))
+#Strata1
+#Along Axis 1
+contrib1.1 <- loadingplot(Strata1_DAPC$var.contr, axis = 1, lab.jitter = 1,threshold = .01,xlab = "",main="Strata1, DA1")
+# Along Axis 2
+contrib1.2 <- loadingplot(Strata1_DAPC$var.contr, axis = 2, lab.jitter = 1,threshold = .01,xlab="",main="Strata1, DA2")
+#Strata2
+#Along Axis 1
+contrib2.1 <- loadingplot(Strata2_DAPC$var.contr, axis = 1, lab.jitter = 1,threshold = .01,xlab = "",main="Strata2, DA1")
+# Along Axis 2
+contrib2.2 <- loadingplot(Strata2_DAPC$var.contr, axis = 2, lab.jitter = 1,threshold = .01,xlab="",main="Strata2, DA2")
+
+#Strata3
+#Along Axis 1
+contrib3.1 <- loadingplot(Strata3_DAPC_filtered$var.contr, axis = 1, lab.jitter = 1,threshold = .01,xlab = "",main="Strata3, DA1")
+# Along Axis 2
+contrib3.2 <- loadingplot(Strata3_DAPC_filtered$var.contr, axis = 2, lab.jitter = 1,threshold = .01,xlab="",main="Strata3, DA2")
+
+#South AK
+#Along Axis 1
+contribS.1 <- loadingplot(South_AK_DAPC$var.contr, axis = 1, lab.jitter = 1,threshold = .01,xlab = "",main="South AK, DA1")
+# Along Axis 2
+contribS.2 <- loadingplot(South_AK_DAPC$var.contr, axis = 2, lab.jitter = 1,threshold = .01,xlab="",main="South AK, DA2")
+
+mtext(text = "DAPC Loadings", side=2,outer=T,line=1.5)
+
+
+
+
+
+
+
+
+
+#loading threshold for a diagnostic locus:  0.01 
+da1.1_diagnostic_loci<-contrib1.1$var.names[contrib1.1$var.values>0.01]
+da1.2_diagnostic_loci<-contrib1.2$var.names[contrib1.2$var.values>0.01]
+da2.1_diagnostic_loci<-contrib2.1$var.names[contrib2.1$var.values>0.01]
+da2.2_diagnostic_loci<-contrib2.2$var.names[contrib2.2$var.values>0.01]
+da3.1_diagnostic_loci<-contrib3.1$var.names[contrib3.1$var.values>0.01]
+da3.2_diagnostic_loci<-contrib3.2$var.names[contrib3.2$var.values>0.01]
+daS.1_diagnostic_loci<-contribS.1$var.names[contribS.1$var.values>0.01]
+daS.2_diagnostic_loci<-contribS.2$var.names[contribS.2$var.values>0.01]
+
+all_diagnostic_loci<-unique(c(da1.1_diagnostic_loci, da1.2_diagnostic_loci, da2.1_diagnostic_loci, da2.2_diagnostic_loci, da3.1_diagnostic_loci, da3.2_diagnostic_loci, daS.1_diagnostic_loci, daS.2_diagnostic_loci))
+
+
+
+#####Strata 1 DA 1 #########
+SNP_names<-substr(da1.1_diagnostic_loci,1,nchar(da1.1_diagnostic_loci)-3)
+freq_loci<-t(tab(genind2genpop(Strata1_genepop[loc=SNP_names]),freq=TRUE))
+freq_loci<-as.data.frame(freq_loci[da1.1_diagnostic_loci,])
+freq_loci$Locus<-rownames(freq_loci)
+freq_loci<-gather(freq_loci,key="Population",value="Allele_Frequency",CHUK,EASTERN_BS,GOA)
+
+theme_set(theme_bw()) 
+
+da1.1_plot<-ggplot(data = freq_loci, aes(color=Locus,x=Population,y=Allele_Frequency,group=Locus)) +
+  #geom_line(size = 1.2) +
+  geom_jitter(size = 1.5,width = .15, height = 0) +
+  labs(x="", y="")+
+  ggtitle("Strata1 DA1")
+
+#####Strata 1 DA 2 #########
+SNP_names<-substr(da1.2_diagnostic_loci,1,nchar(da1.2_diagnostic_loci)-3)
+freq_loci<-t(tab(genind2genpop(Strata1_genepop[loc=SNP_names]),freq=TRUE))
+freq_loci<-as.data.frame(freq_loci[da1.2_diagnostic_loci,])
+freq_loci$Locus<-rownames(freq_loci)
+freq_loci<-gather(freq_loci,key="Population",value="Allele_Frequency",CHUK,EASTERN_BS,GOA)
+
+theme_set(theme_bw()) 
+
+da1.2_plot<-ggplot(data = freq_loci, aes(color=Locus,x=Population,y=Allele_Frequency,group=Locus)) +
+  #geom_line(size = 1.2) +
+  geom_jitter(size = 1.5,width = .15, height = 0) +
+  labs(x="", y="")+
+  ggtitle("Strata1 DA2")
+
+#####Strata 2 DA 1 #########
+SNP_names<-substr(da2.1_diagnostic_loci,1,nchar(da2.1_diagnostic_loci)-3)
+freq_loci<-t(tab(genind2genpop(Strata2_genepop[loc=SNP_names]),freq=TRUE))
+freq_loci<-as.data.frame(freq_loci[da2.1_diagnostic_loci,])
+freq_loci$Locus<-rownames(freq_loci)
+freq_loci<-gather(freq_loci,key="Population",value="Allele_Frequency",BAR,EBS,EGOA,WGOA)
+
+theme_set(theme_bw()) 
+
+da2.1_plot<-ggplot(data = freq_loci, aes(color=Locus,x=Population,y=Allele_Frequency,group=Locus)) +
+  #geom_line(size = 1.2) +
+  geom_jitter(size = 1.5,width = .15, height = 0) +
+  labs(x="", y="")+
+  ggtitle("Strata2 DA1")
+
+#####Strata 2 DA 2 #########
+SNP_names<-substr(da2.2_diagnostic_loci,1,nchar(da2.2_diagnostic_loci)-3)
+freq_loci<-t(tab(genind2genpop(Strata2_genepop[loc=SNP_names]),freq=TRUE))
+freq_loci<-as.data.frame(freq_loci[da2.2_diagnostic_loci,])
+freq_loci$Locus<-rownames(freq_loci)
+freq_loci<-gather(freq_loci,key="Population",value="Allele_Frequency",BAR,EBS,EGOA,WGOA)
+
+theme_set(theme_bw()) 
+
+da2.2_plot<-ggplot(data = freq_loci, aes(color=Locus,x=Population,y=Allele_Frequency,group=Locus)) +
+  #geom_line(size = 1.2) +
+  geom_jitter(size = 1.5,width = .15, height = 0) +
+  labs(x="", y="")+
+  ggtitle("Strata2 DA2")
+
+
+#####Strata 3 DA 1 #########
+SNP_names<-substr(da3.1_diagnostic_loci,1,nchar(da3.1_diagnostic_loci)-3)
+freq_loci<-t(tab(genind2genpop(Strata3_genepop_filtered[loc=SNP_names]),freq=TRUE))
+freq_loci<-as.data.frame(freq_loci[da3.1_diagnostic_loci,])
+freq_loci$Locus<-rownames(freq_loci)
+freq_loci<-gather(freq_loci,key="Population",value="Allele_Frequency",BARROW,COOK,COPPER,N_SEAK,NEBS)
+
+theme_set(theme_bw()) 
+
+da3.1_plot<-ggplot(data = freq_loci, aes(color=Locus,x=Population,y=Allele_Frequency,group=Locus)) +
+  #geom_line(size = 1.2) +
+  geom_jitter(size = 1.5,width = .15, height = 0) +
+  labs(x="", y="")+
+  ggtitle("Strata3 DA 1")
+
+#####Strata 3 DA 2 #########
+SNP_names<-substr(da3.2_diagnostic_loci,1,nchar(da3.2_diagnostic_loci)-3)
+freq_loci<-t(tab(genind2genpop(Strata3_genepop_filtered[loc=SNP_names]),freq=TRUE))
+freq_loci<-as.data.frame(freq_loci[da3.2_diagnostic_loci,])
+freq_loci$Locus<-rownames(freq_loci)
+freq_loci<-gather(freq_loci,key="Population",value="Allele_Frequency",BARROW,COOK,COPPER,N_SEAK,NEBS)
+
+theme_set(theme_bw()) 
+
+da3.2_plot<-ggplot(data = freq_loci, aes(color=Locus,x=Population,y=Allele_Frequency,group=Locus)) +
+  #geom_line(size = 1.2) +
+  geom_jitter(size = 1.5,width = .15, height = 0) +
+  labs(x="", y="")+
+  ggtitle("Strata3 DA 2")
+
+
+#####South AK DA 1 #########
+SNP_names<-substr(daS.1_diagnostic_loci,1,nchar(daS.1_diagnostic_loci)-3)
+freq_loci<-t(tab(genind2genpop(South_AK_genepop[loc=SNP_names]),freq=TRUE))
+freq_loci<-as.data.frame(freq_loci[daS.1_diagnostic_loci,])
+freq_loci$Locus<-rownames(freq_loci)
+freq_loci<-gather(freq_loci,key="Population",value="Allele_Frequency",COOK,COPPER,N_SEAK,NEBS)
+
+theme_set(theme_bw()) 
+
+daS.1_plot<-ggplot(data = freq_loci, aes(color=Locus,x=Population,y=Allele_Frequency,group=Locus)) +
+  #geom_line(size = 1.2) +
+  geom_jitter(size = 1.5,width = .15, height = 0) +
+  labs(x="", y="")+
+  ggtitle("South AK DA1")
+
+#####South AK DA 2 #########
+SNP_names<-substr(daS.2_diagnostic_loci,1,nchar(daS.2_diagnostic_loci)-3)
+freq_loci<-t(tab(genind2genpop(South_AK_genepop[loc=SNP_names]),freq=TRUE))
+freq_loci<-as.data.frame(freq_loci[daS.2_diagnostic_loci,])
+freq_loci$Locus<-rownames(freq_loci)
+freq_loci<-gather(freq_loci,key="Population",value="Allele_Frequency",COOK,COPPER,N_SEAK,NEBS)
+
+theme_set(theme_bw()) 
+
+daS.2_plot<-ggplot(data = freq_loci, aes(color=Locus,x=Population,y=Allele_Frequency,group=Locus)) +
+  #geom_line(size = 1.2) +
+  geom_jitter(size = 1.5,width = .15, height = 0) +
+  labs(x="", y="")+
+  ggtitle("South AK DA2")
+
+
+
+Diagnostic_Loci_Plot<-ggarrange(ncol = 2, nrow=4,
+                                da1.1_plot,da1.2_plot,
+                                da2.1_plot,da2.2_plot,
+                                da3.1_plot,da3.2_plot,
+                                daS.1_plot,daS.2_plot)
+Diagnostic_Loci_Plot
+
+
+```
+
+
+#Export workspace for use in relatedness/Ne/IBD script
+```{r}
+
+save.image(file="SNP_DAPC_Workspace.RData")
+
+```
+
+

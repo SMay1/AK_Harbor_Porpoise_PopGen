@@ -1,0 +1,385 @@
+---
+title: "SNP_PCAs_and_sPCAs"
+author: "Sam May"
+date: "August 29, 2020"
+output: pdf_document
+---
+
+
+PCAs and sPCAs for harbor porposes - loading data from DACP script. 
+
+Note, PCAs require no missing data - will be imputed using population medians. Low missing data means this shouldn't have a large homogenizing effect, but it still may. 
+
+```{r}
+load("SNP_DAPC_Workspace.RData")
+
+library(viridis)
+library(adegenet)
+library(strataG)
+library(spdep)
+library(tidyverse)
+library(gtools)
+library(PBSmapping)
+library(maps)
+library(ggplot2)
+library(rworldmap)
+library(swfscMisc)
+library(fields)
+library(RColorBrewer)
+library(mapplots)
+library(marmap)
+library(raster)
+library(splancs)
+
+```
+
+###Regular PCAs first:
+
+#Strata 1:
+
+```{r}
+
+Strata1_genepop<-AK_genepop
+Strata1_genepop$pop<-as.factor(Strata1_genepop$other$Strata1)
+#Strata1_genepop<-Strata1_genepop[!Strata1_genepop$pop=="KODIAK"]
+
+Strata1_scaled <- scaleGen(Strata1_genepop, NA.method="mean")
+
+Strata1_PCA<-dudi.pca(Strata1_scaled,cent=T,scale=F,scannf=F,nf=3) #Run PCA
+Strata1_PCA_df<- Strata1_PCA$li #save coordniates in a data frame
+Strata1_PCA_df$pop<-Strata1_genepop$pop #add individual populations to data frame
+
+Strata1_PCA_df$pop<-factor(Strata1_PCA_df$pop,levels=c("CHUK","EASTERN_BS","GOA","WESTERN_BS"))
+Strata1_pop_colors<-viridis(4)
+
+# get percent var explained per axis / principal component, for plot
+PC_eigs_out <- Strata1_PCA$eig
+PC_axis1_var_out <- paste(substr(as.character((PC_eigs_out[1] / sum(PC_eigs_out))*100),1,5),"%",sep="")
+PC_axis2_var_out <- paste(substr(as.character((PC_eigs_out[2] / sum(PC_eigs_out))*100),1,5),"%",sep="")
+
+Strata1_PCA_plot <- ggplot(data = Strata1_PCA_df, aes(x= Axis1, y= Axis2)) + 
+  geom_point(aes(colour = pop), size = 3.0, alpha = 0.7) +
+  scale_colour_manual(values=Strata1_pop_colors) +
+  #geom_text(aes(label=rownames(AK_Collection_PCA_df)),nudge_x=5,nudge_y = 5)+
+  theme(plot.margin = unit(c(6,0,6,0), "pt")) +
+  labs(x=paste("PC1",PC_axis1_var_out), y=paste("PC2", PC_axis2_var_out)) +
+  ggtitle("Strata 1")+
+  theme_classic() +
+  theme(axis.text.x=element_blank(), axis.ticks.x=element_blank(),
+        axis.text.y=element_blank(), axis.ticks.y=element_blank()) +
+  theme(legend.position="right") +
+  theme(legend.title=element_blank())
+Strata1_PCA_plot
+
+```
+
+```{r}
+
+Strata2_genepop<-AK_genepop
+Strata2_genepop$pop<-as.factor(Strata2_genepop$other$Strata2)
+Strata2_genepop<-Strata2_genepop[!Strata3_genepop$pop=="KODIAK"]
+
+Strata2_scaled <- scaleGen(Strata2_genepop, NA.method="mean")
+
+Strata2_PCA<-dudi.pca(Strata2_scaled,cent=T,scale=F,scannf=F,nf=3) #Run PCA
+Strata2_PCA_df<- Strata2_PCA$li #save coordniates in a data frame
+Strata2_PCA_df$pop<-Strata2_genepop$pop #add individual populations to data frame
+
+Strata2_PCA_df$pop<-factor(Strata2_PCA_df$pop,levels=c("BAR","EBS","WBS","WGOA","YAKUTAT","EGOA"))
+Strata2_pop_colors<-viridis(6)
+
+# get percent var explained per axis / principal component, for plot
+PC_eigs_out <- Strata2_PCA$eig
+PC_axis1_var_out <- paste(substr(as.character((PC_eigs_out[1] / sum(PC_eigs_out))*100),1,5),"%",sep="")
+PC_axis2_var_out <- paste(substr(as.character((PC_eigs_out[2] / sum(PC_eigs_out))*100),1,5),"%",sep="")
+
+Strata2_PCA_plot <- ggplot(data = Strata2_PCA_df, aes(x= Axis1, y= Axis2)) + 
+  geom_point(aes(colour = pop), size = 3.0, alpha = 0.7) +
+  scale_colour_manual(values=Strata2_pop_colors) +
+  #geom_text(aes(label=rownames(AK_Collection_PCA_df)),nudge_x=5,nudge_y = 5)+
+  theme(plot.margin = unit(c(6,0,6,0), "pt")) +
+  labs(x=paste("PC1",PC_axis1_var_out), y=paste("PC2", PC_axis2_var_out)) +
+  ggtitle("Strata 2")+
+  theme_classic() +
+  theme(axis.text.x=element_blank(), axis.ticks.x=element_blank(),
+        axis.text.y=element_blank(), axis.ticks.y=element_blank()) +
+  theme(legend.position="right") +
+  theme(legend.title=element_blank())
+Strata2_PCA_plot
+
+```
+
+```{r}
+
+Strata3_genepop<-AK_genepop
+Strata3_genepop$pop<-as.factor(Strata3_genepop$other$Strata3)
+Strata3_genepop<-Strata3_genepop[!Strata3_genepop$pop=="KODIAK"]
+
+Strata3_scaled <- scaleGen(Strata3_genepop, NA.method="mean")
+
+Strata3_PCA<-dudi.pca(Strata3_scaled,cent=T,scale=F,scannf=F,nf=3) #Run PCA
+Strata3_PCA_df<- Strata3_PCA$li #save coordniates in a data frame
+Strata3_PCA_df$pop<-Strata3_genepop$pop #add individual populations to data frame
+
+Strata3_PCA_df$pop<-factor(Strata3_PCA_df$pop,levels=c("BARROW","WBS","NEBS","SEBS","COOK","COPPER","YAKUTAT","N_SEAK","S_SEAK"))
+Strata3_pop_colors<-c("yellow","orange","black","hotpink","pink","green","gold","blue","purple")
+
+# get percent var explained per axis / principal component, for plot
+PC_eigs_out <- Strata3_PCA$eig
+PC_axis1_var_out <- paste(substr(as.character((PC_eigs_out[1] / sum(PC_eigs_out))*100),1,5),"%",sep="")
+PC_axis2_var_out <- paste(substr(as.character((PC_eigs_out[2] / sum(PC_eigs_out))*100),1,5),"%",sep="")
+
+Strata3_PCA_plot <- ggplot(data = Strata3_PCA_df, aes(x= Axis1, y= Axis2)) + 
+  geom_point(aes(colour = pop), size = 3.0, alpha = 0.7) +
+  scale_colour_manual(values=Strata3_pop_colors) +
+  #geom_text(aes(label=rownames(AK_Collection_PCA_df)),nudge_x=5,nudge_y = 5)+
+  theme(plot.margin = unit(c(6,0,6,0), "pt")) +
+  labs(x=paste("PC1",PC_axis1_var_out), y=paste("PC2", PC_axis2_var_out)) +
+  ggtitle("Strata 3")+
+  theme_classic() +
+  theme(axis.text.x=element_blank(), axis.ticks.x=element_blank(),
+        axis.text.y=element_blank(), axis.ticks.y=element_blank()) +
+  theme(legend.position="right") +
+  theme(legend.title=element_blank())
+Strata3_PCA_plot
+
+```
+
+South AK Large Pops
+```{r}
+
+SAK_genepop<-AK_genepop
+SAK_genepop$pop<-as.factor(SAK_genepop$other$Strata3)
+SAK_genepop<-SAK_genepop[!SAK_genepop$pop%in%c("KODIAK","WBS","SEBS","BARROW","YAKUTAT","S_SEAK")]
+
+SAK_scaled <- scaleGen(SAK_genepop, NA.method="mean")
+
+SAK_PCA<-dudi.pca(SAK_scaled,cent=T,scale=F,scannf=F,nf=3) #Run PCA
+SAK_PCA_df<- SAK_PCA$li #save coordniates in a data frame
+SAK_PCA_df$pop<-SAK_genepop$pop #add individual populations to data frame
+
+SAK_PCA_df$pop<-factor(SAK_PCA_df$pop,levels=c("NEBS","COOK","COPPER","N_SEAK"))
+SAK_pop_colors<-c("black","pink","green","blue")
+
+# get percent var explained per axis / principal component, for plot
+PC_eigs_out <- SAK_PCA$eig
+PC_axis1_var_out <- paste(substr(as.character((PC_eigs_out[1] / sum(PC_eigs_out))*100),1,5),"%",sep="")
+PC_axis2_var_out <- paste(substr(as.character((PC_eigs_out[2] / sum(PC_eigs_out))*100),1,5),"%",sep="")
+
+SAK_PCA_plot <- ggplot(data = SAK_PCA_df, aes(x= Axis1, y= Axis2)) + 
+  geom_point(aes(colour = pop), size = 3.0, alpha = 0.7) +
+  scale_colour_manual(values=SAK_pop_colors) +
+  #geom_text(aes(label=rownames(AK_Collection_PCA_df)),nudge_x=5,nudge_y = 5)+
+  theme(plot.margin = unit(c(6,0,6,0), "pt")) +
+  labs(x=paste("PC1",PC_axis1_var_out), y=paste("PC2", PC_axis2_var_out)) +
+  ggtitle("Strata 3, n>10")+
+  theme_classic() +
+  theme(axis.text.x=element_blank(), axis.ticks.x=element_blank(),
+        axis.text.y=element_blank(), axis.ticks.y=element_blank()) +
+  theme(legend.position="right") +
+  theme(legend.title=element_blank())
+SAK_PCA_plot
+
+```
+
+```{r}
+ggarrange(Strata1_PCA_plot,Strata2_PCA_plot,Strata3_PCA_plot,SAK_PCA_plot)
+
+
+```
+
+So, PCAs clearly show no structure ... what if we add in geographic information?
+Code mostly from P.Morin
+
+```{r}
+title="Strata1"
+
+Strata1_genepop$other$xy$x<-as.numeric(Strata1_genepop$other$xy$x)
+Strata1_genepop$other$xy$y<-as.numeric(Strata1_genepop$other$xy$y)
+
+Strata1_genepop$other$xy$x<-jitter(Strata1_genepop$other$xy$x, factor = .5)
+Strata1_genepop$other$xy$y<-jitter(Strata1_genepop$other$xy$y, factor = .5)
+
+#NAs are automatically replaced to mean allele frequency:
+mySpca <- spca(Strata1_genepop, ask=T, type=1, scannf=F, nfposi = 4, nfnega = 0, scale=T) # method used by LL
+
+
+# Positive eigenvalues (on the left) correspond to global structures, while negative eigenvalues (on the right) indicate local patterns.
+barplot(mySpca$eig, main="sPCA eigenvalues",
+col=spectral(length(mySpca$eig)))
+legend("topright", fill=spectral(2),
+leg=c("Global structures", "Local structures"))
+abline(h=0,col="grey")
+
+sp <- screeplot(mySpca,main = "Strata1 Spatial and Variance Components of the Eigenvalues")
+
+# WHEN THIS DOESN'T WORK, it's because the number of eigenvectors doesn't match the number of expected (?) eigenvectors. For 88 samples, there should be 87 eigenvectors, so if mySpca$eig = anything other than 87, there will be an error. The only way I've found to fix this is to change the factor parameter when the lat/lon positions are jittered, then re-run sPCA.
+# Re-running it over and over again with the same factor can also result in different numbers of eigenvalues, so you can just re-run this section until it works.
+
+```
+
+spatial and variance components of the eigenvalues (tutorial p. 13-14)
+The resulting figure represents eigenvalues of sPCA (denoted lambda-i with i = 1,...,r, where lambda-1
+is the highest positive eigenvalue, and lambda-r is the highest negative eigenvalue.
+
+This figure is useful to assess whether a given score
+of entities contains relatively enough variability and spatial structuring to be interpreted.
+For instance, in the tutorial example, lambda-1 clearly is the largest eigenvalue in terms of variance and of spatial
+autocorrelation, and can be well distinguished from all the other eigenvalues. Hence, only
+the first global structure, associated to lambda-1, should be interpreted.
+
+##########################################
+
+Global and local tests
+If the alternative hypothesis is "greater", a p-value is estimated as: (number of random values equal to or greater than the observed one + 1)/(number of permutations + 1). The null hypothesis is rejected if the p-value is less than the significance level. If the alternative hypothesis is "less", a p-value is estimated as: (number of random values equal to or less than the observed one + 1)/(number of permutations + 1). Again, the null hypothesis is rejected if the p-value is less than the significance level. 
+
+```{r message=FALSE, cache=TRUE}
+
+# Need to replace "NA"s in the genind data table with 0s.
+#Strata1_genepop@tab <- na.replace(Strata1_genepop@tab, 0, na.rm=TRUE)
+#
+#myCode: Phil's above na.replace does not work - unused argument na.rm....
+
+#obj1 <- tab(obj, NA.method="mean") # this converts missing data (NA's) to the mean value for the population
+
+#myCode: Phil replaced missing values with zeros, which seems to be causing problems/not working. I'll try scaling the data as I did above for PCAs - however, the above sPCA object is done with the original data... unscaled... is this okay?
+
+#Strata1_scaled <- scaleGen(Strata1_genepop, NA.method="mean")
+
+myGtest <- global.rtest(Strata1_scaled, mySpca$lw, nperm=9999) # can start with 99 permutations to test
+
+myGtest
+a=paste0("observation = ",round(myGtest$obs,5))
+b=paste0("alternative hypothesis = ",myGtest$alter)
+c=paste0("based on ",myGtest$rep," replicates")
+d=paste0("simulated pvalue = ",myGtest$pvalue)
+
+
+plot(myGtest, main="Global Structure Strata 1")
+text(0.0156,3000,a, pos=4)
+text(0.0156,2500,b, pos=4)
+text(0.0156,2000,c, pos=4)
+text(0.0156,1500,d, pos=4)
+myGtest
+
+# The figure shows a histogram of permuted test statistics and indicates the observed statistics by a black dot and a segment. in the example (tutorial-spca.pdf), the plot clearly shows that the oberved test statistic is NOT larger than most simulated values, leading to a likely ACCEPTANCE of the null hypothesis of absence of spatial structure.```
+```
+
+local test
+```{r message=FALSE, cache=TRUE}
+
+myLtest <- local.rtest(Strata1_scaled,mySpca$lw, nperm = 9999) #recommend 9999 permutations; test with 99
+myLtest
+a=paste0("observation = ",round(myLtest$obs,5))
+b=paste0("alternative hypothesis = ",myLtest$alter)
+c=paste0("based on ",myLtest$rep," replicates")
+d=paste0("simulated pvalue = ",myLtest$pvalue)
+
+plot(myLtest, main="Local Structure Strata 1")
+text(0.0165,3000,a, pos=4)
+text(0.0165,2500,b, pos=4)
+text(0.0165,2000,c, pos=4)
+text(0.0165,1500,d, pos=4)
+myLtest
+```
+
+I think this is a good stopping point for now... Phil goes on to make 2D and 3D plots and whatnot - but in the presence of significant structure. 
+
+I'll test this for my southern AK large populations as a last-ditch effort... maybe sample size plays a role
+
+
+
+
+```{r}
+title="SAK"
+
+SAK_genepop$other$xy$x<-as.numeric(SAK_genepop$other$xy$x)
+SAK_genepop$other$xy$y<-as.numeric(SAK_genepop$other$xy$y)
+
+SAK_genepop$other$xy$x<-jitter(SAK_genepop$other$xy$x, factor = .5)
+SAK_genepop$other$xy$y<-jitter(SAK_genepop$other$xy$y, factor = .5)
+
+#NAs are automatically replaced to mean allele frequency:
+mySpca <- spca(SAK_genepop, ask=T, type=1, scannf=F, nfposi = 4, nfnega = 0, scale=T) # method used by LL
+
+
+# Positive eigenvalues (on the left) correspond to global structures, while negative eigenvalues (on the right) indicate local patterns.
+barplot(mySpca$eig, main="sPCA eigenvalues South_AK Large Pops",
+col=spectral(length(mySpca$eig)))
+legend("topright", fill=spectral(2),
+leg=c("Global structures", "Local structures"))
+abline(h=0,col="grey")
+
+sp <- screeplot(mySpca,main = "SAK Spatial and Variance Components of the Eigenvalues")
+
+# WHEN THIS DOESN'T WORK, it's because the number of eigenvectors doesn't match the number of expected (?) eigenvectors. For 88 samples, there should be 87 eigenvectors, so if mySpca$eig = anything other than 87, there will be an error. The only way I've found to fix this is to change the factor parameter when the lat/lon positions are jittered, then re-run sPCA.
+# Re-running it over and over again with the same factor can also result in different numbers of eigenvalues, so you can just re-run this section until it works.
+
+```
+
+spatial and variance components of the eigenvalues (tutorial p. 13-14)
+The resulting figure represents eigenvalues of sPCA (denoted lambda-i with i = 1,...,r, where lambda-1
+is the highest positive eigenvalue, and lambda-r is the highest negative eigenvalue.
+
+This figure is useful to assess whether a given score
+of entities contains relatively enough variability and spatial structuring to be interpreted.
+For instance, in the tutorial example, lambda-1 clearly is the largest eigenvalue in terms of variance and of spatial
+autocorrelation, and can be well distinguished from all the other eigenvalues. Hence, only
+the first global structure, associated to lambda-1, should be interpreted.
+
+##########################################
+
+Global and local tests
+If the alternative hypothesis is "greater", a p-value is estimated as: (number of random values equal to or greater than the observed one + 1)/(number of permutations + 1). The null hypothesis is rejected if the p-value is less than the significance level. If the alternative hypothesis is "less", a p-value is estimated as: (number of random values equal to or less than the observed one + 1)/(number of permutations + 1). Again, the null hypothesis is rejected if the p-value is less than the significance level. 
+
+```{r message=FALSE, cache=TRUE}
+
+# Need to replace "NA"s in the genind data table with 0s.
+#SAK_genepop@tab <- na.replace(SAK_genepop@tab, 0, na.rm=TRUE)
+#SAK_genepop@tab <- na.replace(SAK_genepop@tab, 0)
+
+#myCode: Phil's above na.replace does not work - unused argument na.rm....
+
+#obj1 <- tab(obj, NA.method="mean") # this converts missing data (NA's) to the mean value for the population
+
+#myCode: Phil replaced missing values with zeros, which seems to be causing problems/not working. I'll try scaling the data as I did above for PCAs - however, the above sPCA object is done with the original data... unscaled... is this okay?
+
+#SAK_scaled <- scaleGen(SAK_genepop, NA.method="mean")
+
+#myGtest <- global.rtest(SAK_genepop$tab, mySpca$lw, nperm=999) # can start with 99 permutations to test
+myGtest <- global.rtest(SAK_scaled, mySpca$lw, nperm=9999) # can start with 99 permutations to test
+
+myGtest
+a=paste0("observation = ",round(myGtest$obs,5))
+b=paste0("alternative hypothesis = ",myGtest$alter)
+c=paste0("based on ",myGtest$rep," replicates")
+d=paste0("simulated pvalue = ",myGtest$pvalue)
+
+
+plot(myGtest, main="Global Structure SAK Large Pops")
+text(0.021,2400,a, pos=4)
+text(0.021,2000,b, pos=4)
+text(0.021,1500,c, pos=4)
+text(0.021,1000,d, pos=4)
+myGtest
+
+# The figure shows a histogram of permuted test statistics and indicates the observed statistics by a black dot and a segment. in the example (tutorial-spca.pdf), the plot clearly shows that the oberved test statistic is NOT larger than most simulated values, leading to a likely ACCEPTANCE of the null hypothesis of absence of spatial structure.```
+```
+
+local test
+```{r message=FALSE, cache=TRUE}
+myLtest <- local.rtest(SAK_scaled,mySpca$lw, nperm = 9999) #recommend 9999 permutations; test with 99
+myLtest
+a=paste0("observation = ",round(myLtest$obs,5))
+b=paste0("alternative hypothesis = ",myLtest$alter)
+c=paste0("based on ",myLtest$rep," replicates")
+d=paste0("simulated pvalue = ",myLtest$pvalue)
+
+plot(myLtest, main="Local Structure SAK Large Pops")
+text(0.0225,3000,a, pos=4)
+text(0.0225,2500,b, pos=4)
+text(0.0225,2000,c, pos=4)
+text(0.0225,1500,d, pos=4)
+myLtest
+```
+

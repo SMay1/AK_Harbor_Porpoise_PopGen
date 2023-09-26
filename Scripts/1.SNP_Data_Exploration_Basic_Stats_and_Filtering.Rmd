@@ -1,0 +1,820 @@
+---
+title: "SNP_Data_Exploration_and_Filtering"
+author: "Sam"
+date: "4/10/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Data Exploration and Filtering
+
+This script should be run first, don't re-define species_genepop or Ppho_genepop in other scripts. 
+
+Species-Level filtering:
+
+1) Remove Individuals or Loci with >=75% missing data, a natural break in the data
+2) Look for potentially duplicated samples and remove, if any (none)
+3) Identify loci diagnostic for species
+
+AK-level filtering:
+
+1) Remove Individuals or Loci with >=75% missing data, a natural break in the data
+2) Remove Individuals who are partial hybrids as per the species-level analyses
+- Individuals who may be partial hybrids should be removed from the dataset as they will confound pop structure analyses
+- I've tossed any individual with <90% admixture coefficient for Ppho
+3) Look for potentially duplicated samples and remove, if any (none)
+2) Remove loci with |Ho-He| > 0.2
+4) Filter out loci not in HWE in both GOA and EBS
+5) Filter out loci in LD in both GOA and EBS
+
+```{r, results="hide",warning=F,message=F}
+#Session > Set Working Directory > to Source File Location
+
+setwd("G:/My Drive/Southeast AK Harbor Porpoise Structure/R_Project/Scripts/")
+library(tidyverse)
+library(genetics)
+library(adegenet)
+library(hierfstat)
+library(mapplots) 
+library(mapproj)
+library(fields)
+library(RColorBrewer)
+#library(BiocManager)
+#BiocManager::install("LEA",update = F)
+#install.packages("LEA_1.4.0_tar.gz", repos = NULL, type ="source")
+#.libPaths("C:/Users/End User/AppData/Local/Temp/Rtmpcj7Pso/downloaded_packages")
+library(LEA)
+library(ggpubr)
+library(LDcorSV)
+library(pegas)
+library(genepop)
+library(strataG)
+
+```
+
+
+# Data: 
+**292SNP GTseq panel** + **Q_Ppho strata metadata**
+
+```{r, results="hide",warning=F}
+
+raw_SNP_data<- read.csv("../Data/SNP151-microhaplo_QA_292_loci_final_genotypes.csv",header=T)
+rownames(raw_SNP_data)<-raw_SNP_data[,1]
+raw_SNP_data<-raw_SNP_data[,2:ncol(raw_SNP_data)]
+
+meta_data<-read.csv("../Data/20230921_metadata_eDNA_combined_haplotypes.csv",na.strings = "")
+
+year_data<-read.csv("../Data/Ppho_samplesummary_YearLatLong.csv")
+
+meta_data$Year<-year_data$YR[match(meta_data$LABID,year_data$LABID)]
+
+#Shortening Strata Names:
+meta_data$AK_STRATA_1<-stringr::str_replace_all(meta_data$AK_STRATA_1,"CHUKCHI-N.BERING","CHUK")
+meta_data$AK_STRATA_1<-stringr::str_replace_all(meta_data$AK_STRATA_1,"BERING_SEA","BS")
+meta_data$AK_STRATA_1<-stringr::str_replace_all(meta_data$AK_STRATA_1,"GULF_OF_AK","GOA")
+meta_data$AK_STRATA_1<-stringr::str_replace_all(meta_data$AK_STRATA_1,"GULF OF AK","GOA")
+
+meta_data$AK_STRATA_2<-stringr::str_replace_all(meta_data$AK_STRATA_2,"BARROW","BAR")
+meta_data$AK_STRATA_2<-stringr::str_replace_all(meta_data$AK_STRATA_2,"WESTERN_BERING_SEA","WBS")
+meta_data$AK_STRATA_2<-stringr::str_replace_all(meta_data$AK_STRATA_2,"EASTERN_BERING_SEA","EBS")
+meta_data$AK_STRATA_2<-stringr::str_replace_all(meta_data$AK_STRATA_2,"WESTERN_GOA","WGOA")
+meta_data$AK_STRATA_2<-stringr::str_replace_all(meta_data$AK_STRATA_2,"EASTERN_GOA","EGOA")
+meta_data$AK_STRATA_2<-stringr::str_replace_all(meta_data$AK_STRATA_2,"EASTERN GOA","EGOA")
+meta_data$AK_STRATA_2<-stringr::str_replace_all(meta_data$AK_STRATA_2,"CENTRAL_ALEUTIANS","CA")
+
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"KOTZEBUE","KOTZ")
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"WESTERN_BERING_SEA","WBS")
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"NORTHEAST_BERING_SEA","NEBS")
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"SOUTHEAST_BERING_SEA","SEBS")
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"COOK_INLET","COOK")
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"COPPER_RIVER","COPPER")
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"SEAK_NORTH","N_SEAK")
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"SEAK_SOUTH","S_SEAK")
+
+#We tested to see if these samples were differentiated from N and S SEAK.
+#They were differentiated from S_SEAK but not from N_SEAK - so we are calling them N_SEAK henceforth.
+#meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"SEAK_INTERMEDIATE","INT_SEAK")
+
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"SEAK_INTERMEDIATE","N_SEAK")
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"INT_SEAK","N_SEAK")
+
+```
+
+## Assign States
+```{r}
+xy<-meta_data[,c('Longitude','Latitude')]
+state<-xy$Latitude
+
+#Probably easilest to just assign state by longitude
+state[which(xy$Latitude<41.999)]<-"CA"
+state[which(xy$Latitude<46.26 & xy$Latitude>41.999)]<-"OR"
+state[which(xy$Latitude>46.26 & xy$Latitude<48.999)]<-"WA"
+state[which(xy$Latitude>48.999 & xy$Latitude<54.7)]<-"BC"
+state[which(xy$Latitude>54.7)]<-"AK"
+
+meta_data$State<-state
+
+```
+
+
+
+## Convert raw_SNP_data to genind
+Here I use the package 'genetics' to convert the raw data to a haplotype file, output a genepop file, and import that genepop file with adegenet
+
+```{r,results="hide",warning=F}
+
+raw_SNP_data[raw_SNP_data=="NA/NA"]<-NA
+haplos<-makeHaplotypes(data = raw_SNP_data,tol=0.5) #tolerance for missing data set to 50% - see filters below
+
+
+write.pop.file(data = haplos,file = "../Data/genepop_GTseq_haplotypes.gen")
+locus_names<-readLines("../Data/genepop_GTseq_haplotypes.gen")
+locus_names[2]<-gsub(x = locus_names[2],pattern=" ",replacement = "\n")
+writeLines(locus_names,"../Data/genepop_GTseq_haplotypes.gen")
+
+species_genepop<-read.genepop("../Data/genepop_GTseq_haplotypes.gen",ncode = 2)
+
+species_genepop$other$xy<-meta_data[match(indNames(species_genepop),meta_data$LABID),c("Longitude","Latitude")]
+colnames(species_genepop$other$xy)<-c("x","y")
+rownames(species_genepop$other$xy)<-indNames(species_genepop)
+
+```
+
+## Assign 'other' slot 
+
+- *a priori* species ID
+- State based on latitude in other$state
+- Collection Site from Num_AK3_WC4
+
+
+```{r}
+
+individuals<-indNames(species_genepop)
+length(individuals)
+species_ids<-as.character(meta_data$species[match(individuals,meta_data$LABID)])
+
+
+pop(species_genepop)<-species_ids
+popNames(species_genepop)
+
+species_genepop$other$species<-species_ids
+species_genepop$other$state<-meta_data$State[match(indNames(species_genepop),meta_data$LABID)]
+species_genepop$other$collection_site<-meta_data$Num_AK3_WC4[match(indNames(species_genepop),meta_data$LABID)]
+
+#removing vaquitas:
+species_genepop<-species_genepop[species_genepop$other$species!="Psin"]
+
+original_genepop<-species_genepop
+
+
+
+```
+
+Summary of individuals:
+```{r}
+table(species_genepop$other$species)
+
+length(which(species_genepop$other$species=="Ppho" & species_genepop$other$state=="AK"))
+
+```
+
+# Hierfstat for basic statistics
+
+### Look for natural break in prop typed
+
+```{r}
+
+#Tossing loci genotyped in less than 80% of individuals
+
+loc_prop_typed<-propTyped(species_genepop,by="loc")
+length(which(loc_prop_typed>=0.75))
+species_genepop<-species_genepop[loc=loc_prop_typed>=0.75] #264 loci typed in >=80% of loci
+
+
+hist(loc_prop_typed)
+
+ind_prop_typed<-propTyped(species_genepop,by="ind")
+tossed_ind<-which(ind_prop_typed<=0.75)
+
+hist(ind_prop_typed)
+tossed_inds_df<-meta_data[which(meta_data$LABID%in%names(tossed_ind)),]
+table(tossed_inds_df$AK_STRATA_2)
+
+species_genepop<-species_genepop[which(ind_prop_typed>=0.75),] #350 individuals typed in >=80% of individuals
+
+
+species_names<-popNames(species_genepop)
+species_stats<-basic.stats(species_genepop)
+summary(species_stats)
+
+
+```
+
+
+## Identify Loci Diagnostic for Species ID
+Discriminant Analysis of Principle Components (DAPC) - 
+optimizes the variance between groups, while minimizing the variance within groups: it seeks synthetic variables, the discriminant functions, which show differences between groups as best as possible while minimizing variation within clusters. 
+```{r}
+
+myclusters<-find.clusters(species_genepop,n.pca = 100, n.clust=2)# 2 clusters optimal
+dapc_all<- dapc(species_genepop,pop=species_genepop$pop,n.pca=300,n.da=3) #Retain all and identify optimal
+test_a_score<-optim.a.score(dapc_all,n.sim = 100) 
+dapc_all <-dapc(species_genepop,pop=species_genepop$pop,n.pca=test_a_score$best,n.da=3)
+pop_cols<- c("pink","black","green","darkgreen")
+
+scatter(dapc_all,1,2,posi.da="bottomleft",posi.pca = "bottomright",col=pop_cols,cex=1.5,pch=16,solid=1,legend=T,clabel = 0,lab = indNames(species_genepop),label.inds = TRUE,scree.pca = F)
+
+```
+
+Importantly, there are no unidentified F1 hybrids
+
+
+### Species DACP Summary
+
+```{r,cache=T}
+
+dapc_all  ####Gives summary of the DAPC - Assign.per.pop gives proportion of successful reassignments to original pops based on DF's
+dapc_all$var  ### Proportion of variance conserved by the principal components (36.4%)
+dapc_all$prior #### Numeric vector giving prior group probabilities, low likely because of sample size
+#dapc_all$assign ## Posterior group assignment
+#dapc_all$posterior
+dapc_all$eig[1]/sum(dapc_all$eig)  ### Variance explained by first discriminant function (91.9%)
+dapc_all$eig[2]/sum(dapc_all$eig)  ### Variance explained by second discriminant function (8.00%)
+
+# We can assess which alleles pull apart the DAPC clusters using the command loadingplot. 
+# Variable contributions are stored in the var.contr slot of a dapc object
+
+#Along Axis 1
+contrib1 <- loadingplot(dapc_all$var.contr, axis = 1, lab.jitter = 1,threshold = .007,xlab = "Loci")
+
+# Along Axis 2
+contrib2 <- loadingplot(dapc_all$var.contr, axis = 2, lab.jitter = 1)
+
+# Identify structural loci of the DAPC
+# The function snpzip identifies the set of alleles which contribute most significantly to phenotypic structure
+test_snpzip<-snpzip(species_genepop,dapc_all,loading.plot=TRUE,method="median",) 
+#Keep on pressing "return" to scroll through all the DF axes
+
+#loading threshold for a diagnostic locus: either 0.01 or 0.015
+da1_diagnostic_loci<-contrib1$var.names[contrib1$var.values>0.007]
+da2_diagnostic_loci<-contrib2$var.names[contrib2$var.values>0.015]
+
+```
+
+So, it appears that there are a number of species-specific diagnostic loci: 
+
+
+###Plotting AF of species-diagnostic loci
+
+```{r}
+
+#####   DA 1 #########
+SNP_names<-substr(da1_diagnostic_loci,1,nchar(da1_diagnostic_loci)-3)
+freq_loci<-t(tab(genind2genpop(species_genepop[loc=SNP_names]),freq=TRUE))
+freq_loci<-as.data.frame(freq_loci[da1_diagnostic_loci,])
+freq_loci$Locus<-rownames(freq_loci)
+freq_loci<-gather(freq_loci,key="Species",value="Allele_Frequency",Ppho,Pdal,Hyb)
+
+theme_set(theme_bw()) 
+
+da1_plot<-ggplot(data = freq_loci, aes(color=Locus,x=Species,y=Allele_Frequency,group=Locus)) +
+  #geom_line(size = 1.2) +
+  geom_jitter(size = 1.5,width = .15, height = 0) +
+  labs(x="Population", y="Frequency of major allele")+
+  ggtitle("Loci with high loadings on DA 1") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+
+#####   DA 2 #########
+SNP_names<-substr(da2_diagnostic_loci,1,nchar(da2_diagnostic_loci)-3)
+freq_loci<-t(tab(genind2genpop(species_genepop[loc=SNP_names]),freq=TRUE))
+freq_loci<-as.data.frame(freq_loci[da2_diagnostic_loci,])
+freq_loci$Locus<-rownames(freq_loci)
+freq_loci<-gather(freq_loci,key="Species",value="Allele_Frequency",Ppho,Pdal,Hyb)
+
+#dev.off()
+theme_set(theme_bw()) 
+
+da2_plot<-ggplot(data = freq_loci, aes(color=Locus,x=Species,y=Allele_Frequency,group=Locus)) +
+  geom_jitter(size = 1.5,width = .1, height = 0) +
+  labs(x="Population", y="Frequency of major allele")+
+  ggtitle("Loci with high loadings on DA 1") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+Diagnostic_Loci_Plot<-ggarrange(da1_plot,da2_plot)
+Diagnostic_Loci_Plot
+
+```
+
+
+
+# Introgressed Hybrid Alleles 
+
+## Using DAPC to calculate group membership probability
+
+```{r}
+
+Hybrids_clusters<-find.clusters(species_genepop,n.pca = 100,n.clust = 3)
+Hybrids_DAPC<-dapc(species_genepop,grp=Hybrids_clusters$grp,n.pca = 100,n.da=3)
+summary(Hybrids_DAPC)
+
+assignplot(Hybrids_DAPC)
+#Hybrids_DAPC$posterior
+
+compoplot(Hybrids_DAPC) #Extremely low introgression of hybrid alleles.... 
+
+```
+It appears that DAPC is not picking up on low levels of introgressed hybrid alleles...
+
+Running STRUCTURE-like analysis through the LEA package (Frichot and Francois 2015)
+Tutorial at <http://membres-timc.imag.fr/Olivier.Francois/tutoRstructure.pdf>
+
+
+
+## Genind2structure code:
+
+```{r}
+genind2structure <- function(obj, file="", pops=FALSE){
+  if(!"genind" %in% class(obj)){
+    warning("Function was designed for genind objects.")
+  }
+  
+  # get the max ploidy of the dataset
+  pl <- max(obj@ploidy)
+  # get the number of individuals
+  S <- adegenet::nInd(obj)
+  # column of individual names to write; set up data.frame
+  tab <- data.frame(ind=rep(indNames(obj), each=pl))
+
+  # column of pop ids to write
+  if(pops){
+    popnums <- 1:adegenet::nPop(obj)
+    names(popnums) <- as.character(unique(adegenet::pop(obj)))
+    popcol <- rep(popnums[as.character(adegenet::pop(obj))], each=pl)
+    x<-rep(as.character(obj$other$xy$x),each=pl)
+    y<-rep(as.character(obj$other$xy$y),each=pl)
+    tab <- cbind(tab, data.frame(pop=popcol,x=x,y=y))
+  }
+  loci <- adegenet::locNames(obj) 
+  # add columns for genotypes
+  tab <- cbind(tab, matrix(-9, nrow=dim(tab)[1], ncol=adegenet::nLoc(obj),
+                           dimnames=list(NULL,loci)))
+  
+  # begin going through loci
+  for(L in loci){
+    thesegen <- obj@tab[,grep(paste("^", L, "\\.", sep=""), 
+                              dimnames(obj@tab)[[2]]), 
+                        drop = FALSE] # genotypes by locus
+    al <- 1:dim(thesegen)[2] # numbered alleles
+    for(s in 1:S){
+      if(all(!is.na(thesegen[s,]))){
+        tabrows <- (1:dim(tab)[1])[tab[[1]] == indNames(obj)[s]] # index of rows in output to write to
+        tabrows <- tabrows[1:sum(thesegen[s,])] # subset if this is lower ploidy than max ploidy
+        tab[tabrows,L] <- rep(al, times = thesegen[s,])
+      }
+    }
+  }
+  
+  # export table
+  write.table(tab, file=file, sep="\t", quote=FALSE, row.names=FALSE)
+}
+
+```
+
+
+## Admixture Analysis in LEA (STRUCTURE-like)
+This admixture analysis runs differently each time, so I exported the correct output format to 2 csv files and commented out the code used to generate them :)
+```{r}
+
+#genind2structure(species_genepop,file = "../Data/STRUCTURE/Ppho_Pdal_and_Hybrids_all_loci_R.STRUCTURE",pops = T)
+#genind2structure(Ppho_Pdal_genepop_Fis_filtered,file = "../Data/STRUCTURE/Ppho_Pdal_and_Hybrids_Fis_filtered_R.STRUCTURE",pops = T)
+
+
+
+
+#import data:
+#struct2geno(input.file = "../Data/STRUCTURE/Ppho_Pdal_and_Hybrids_all_loci_R.STRUCTURE", ploidy = 2, extra.row = 1, extra.column = 4, FORMAT = 2)
+#struct2geno(input.file = "../Data/STRUCTURE/Ppho_Pdal_and_Hybrids_Fis_filtered_R.STRUCTURE", ploidy = 2, extra.row = 1, extra.column = 4, FORMAT = 2)
+
+
+####ALL LOCI, NOT FILTERED FOR FIS
+#obj.snmf.all <- snmf(input.file = #"../Data/STRUCTURE/Ppho_Pdal_and_Hybrids_all_loci_R.STRUCTURE.geno", K = 2,repetitions = 1, #alpha = 100,iterations = 10000, project = "new")
+#qmatrix.all <- as.data.frame(Q(obj.snmf.all, K = 2))
+#rownames(qmatrix.all)<-indNames(Ppho_Pdal_genepop_all_loci)
+#colnames(qmatrix.all)<-c("Ppho","Pdal")
+#qmatrix.all<-qmatrix.all[base::order(qmatrix.all$Ppho),]
+#write.csv(qmatrix.all,"../Data/STRUCTURE/qmatrix.all.csv")
+qmatrix.all<-read.csv("../Data/STRUCTURE/qmatrix.all.csv",row.names = 1)
+
+####LOCI FILTERED FOR FIS
+#obj.snmf.fis_filtered <- snmf(input.file = "../Data/STRUCTURE/Ppho_Pdal_and_Hybrids_Fis_filtered_R.STRUCTURE.geno", K #= 2,repetitions = 1, alpha = 100,iterations = 10000, project = "new")
+#qmatrix.fis_filtered <- as.data.frame(Q(obj.snmf.fis_filtered, K = 2))
+#rownames(qmatrix.fis_filtered)<-indNames(Ppho_Pdal_genepop_all_loci)
+#colnames(qmatrix.fis_filtered)<-c("Ppho","Pdal")
+#qmatrix.fis_filtered<-qmatrix.fis_filtered[base::order(qmatrix.fis_filtered$Ppho),]
+#write.csv(qmatrix.fis_filtered,"../Data/STRUCTURE/qmatrix.fis_filtered.csv")
+#qmatrix.fis_filtered<-read.csv("../Data/STRUCTURE/qmatrix.fis_filtered.csv",row.names = 1)
+
+###Structure Plots with All loci and Fis filtered loci
+
+colz<-c("orange","violet")
+
+#par(mfcol=c(2,1),mar=c(0,1,1,0),oma=c(2,3,1,0),xpd=NA)
+barplot(t(qmatrix.all), col = colz, border = NA, space = 0,axes=F,xaxt="n")
+axis(side=2)
+mtext(side=3,"Species Proportions",cex=1.5)
+
+#barplot(t(qmatrix.fis_filtered), col = colz, border = NA, space = 0, axes=F,xaxt="n")
+#axis(side=2)
+#mtext(side=3,"Fis Filtered Loci",cex=1.5)
+
+
+mtext("Admixture coefficients",side=2,line = 2,cex=1.4,outer=F)
+mtext("Individuals",side=1,cex=1.4,line=0.5,outer=F)
+legend(x=5,y=0.45,legend = rev(c("P. pho","P. dal")),fill = colz)
+
+
+```
+
+
+## Where are these partial hybrids from?
+
+```{r}
+Ppho_and_hybrids<-rownames(qmatrix.all)[qmatrix.all$Ppho<0.9] #names mixed up sometimes in the STRUCUTRE Analysis - make sure this catches the correct individuals. Should be most of them.
+
+Ppho_and_hybrids_genepop<-species_genepop[Ppho_and_hybrids]
+
+
+#Ppho_and_hybrids_genepop$other$xy
+
+
+par(mfrow=c(1,2),oma=c(2,1,2,1),mar=c(2,2,2,2))
+####BY SAMPLING LOCATION
+
+Ppho_and_hybrids_genepop$pop<-Ppho_and_hybrids_genepop$other$collection_site
+qmatrix.all$pop<-Ppho_and_hybrids_genepop$pop[match(rownames(qmatrix.all),indNames(Ppho_and_hybrids_genepop))]
+
+qmatrix.all$x<-as.numeric(Ppho_and_hybrids_genepop$other$xy$x[match(rownames(qmatrix.all),indNames(Ppho_and_hybrids_genepop))])
+qmatrix.all$y<-as.numeric(Ppho_and_hybrids_genepop$other$xy$y[match(rownames(qmatrix.all),indNames(Ppho_and_hybrids_genepop))])
+
+qmatrix.all_Ppho<-qmatrix.all[which(is.na(qmatrix.all$pop)==F),]
+
+coord<-qmatrix.all_Ppho[c("pop","x","y")]
+
+K = 2 
+pop <- qmatrix.all_Ppho$pop
+unique_pops<-as.vector(unique(pop))
+Npop <- length(unique(qmatrix.all_Ppho$pop))
+qpop <- matrix(NA, ncol = K, nrow = Npop) 
+#rownames(qpop)<-unique(pop)
+coord.pop <- matrix(NA, ncol = 2, nrow = Npop) 
+for (i in 1:Npop){ 
+  qpop[i,] <- apply(qmatrix.all[pop == unique_pops[i],c(1,2)], 2, mean)
+  coord.pop[i,] <- apply(coord[pop == unique_pops[i],c(2,3)], 2, mean)}
+
+
+par(xpd=F)
+
+plot(coord[,c(2,3)], xlab = "Longitude", ylab = "Latitude", type = "n",xlim=c(-180,-110),main="By Collection Site") 
+map(add=T, fill=T,resolution=0, col = "grey90",wrap=T,xlim = c(-180,-110),ylim=c(30,70),lforce="l")
+for (i in 1:Npop){ 
+  add.pie(z = qpop[i,], x = coord.pop[i,1], y = coord.pop[i,2], 
+          labels = "", col = c("orange","violet","lightgreen"))}
+legend("bottomleft", fill = c("orange", "violet"),legend=c("P. dal", "P. Pho"))
+
+####BY STATE
+
+Ppho_and_hybrids_genepop$pop<-as.factor(Ppho_and_hybrids_genepop$other$state)
+qmatrix.all$pop<-Ppho_and_hybrids_genepop$pop[match(rownames(qmatrix.all),indNames(Ppho_and_hybrids_genepop))]
+
+qmatrix.all$x<-as.numeric(Ppho_and_hybrids_genepop$other$xy$x[match(rownames(qmatrix.all),indNames(Ppho_and_hybrids_genepop))])
+qmatrix.all$y<-as.numeric(Ppho_and_hybrids_genepop$other$xy$y[match(rownames(qmatrix.all),indNames(Ppho_and_hybrids_genepop))])
+
+qmatrix.all_Ppho<-qmatrix.all[which(is.na(qmatrix.all$pop)==F),]
+
+coord<-qmatrix.all_Ppho[c("pop","x","y")]
+
+K = 2 
+pop <- qmatrix.all_Ppho$pop
+unique_pops<-unique(pop)
+Npop <- length(unique(qmatrix.all_Ppho$pop))
+qpop <- matrix(NA, ncol = K, nrow = Npop) 
+#rownames(qpop)<-unique(pop)
+coord.pop <- matrix(NA, ncol = 2, nrow = Npop) 
+for (i in 1:length(unique_pops)){ 
+  qpop[i,] <- apply(qmatrix.all_Ppho[pop == unique_pops[i],c(1,2)], 2, mean) 
+  coord.pop[i,] <- apply(coord[pop == unique_pops[i],c(2,3)], 2, mean)}
+
+#changing AK:
+coord.pop[1,1]<- -150
+
+par(xpd=F)
+states<-c("AK","BC","WA","CA","OR")
+plot(coord[,c(2,3)], xlab = "Longitude", ylab = "Latitude", type = "n",xlim=c(-180,-110),main="By State",cex.main=1.2) 
+map(add=T, fill=T,resolution=0, col = "grey90",wrap=T,xlim = c(-180,-110),ylim=c(30,70),lforce="l")
+for (i in 1:Npop){ 
+  add.pie(z = qpop[i,], x = coord.pop[i,1], y = coord.pop[i,2], ylab= states[i],
+          labels = "", col = c("orange","violet","lightgreen"))}
+#legend("bottomleft", fill = c("orange", "violet"),legend=c("P. dal", "P. Pho"))
+text(coord.pop[,1]+2,coord.pop[,2]+1.5,labels=states,cex=1)
+
+mtext(outer=T,side=3,text = "Proportion Introgressed P.dalli Alleles in Harbor Porpoise Samples",cex=1.5)
+
+
+```
+
+Cool! Most of AK has very little Pdalli introgression (which is good), although there is some in the aleutians, which is probably why those 4 individuals were clustering weird in my PCAs. I should probably just toss any individuals that are putative hybrids. 
+
+Summary of Hybrid Individuals:
+Generation is a rough estimate.
+
+```{r}
+tossed_individuals<-rownames(qmatrix.all)[which(qmatrix.all$Ppho>0.1)]
+
+tossed_individuals_df<-data.frame(labid=tossed_individuals)
+tossed_individuals_df$AK1_USwest<-meta_data$AK1_USwest[match(tossed_individuals,meta_data$LABID)]
+tossed_individuals_df$AK2_USwest<-meta_data$AK2_USwest[match(tossed_individuals,meta_data$LABID)]
+tossed_individuals_df$AK3_USwest<-meta_data$AK3_USwest[match(tossed_individuals,meta_data$LABID)]
+tossed_individuals_df$State<-meta_data$State[match(tossed_individuals,meta_data$LABID)]
+tossed_individuals_df$Year<-meta_data$Year[match(tossed_individuals,meta_data$LABID)]
+tossed_individuals_df$pHybrid<-as.numeric(qmatrix.all$Pdal[which(qmatrix.all$Ppho>0.1)])
+tossed_individuals_df$Species<-meta_data$species[match(tossed_individuals,meta_data$LABID)]
+tossed_individuals_df<-tossed_individuals_df%>%mutate(Hybrid_Generation=
+                                                        case_when(pHybrid <= 0.95 & pHybrid > 0.9 ~ "F4+ harbor",
+                                                                  pHybrid <= 0.9 & pHybrid > 0.8 ~ "F3 harbor",
+                                                                  pHybrid <= 0.8 & pHybrid > 0.55 ~ "F2 harbor",
+                                                                  pHybrid <= 0.55 & pHybrid > 0.36 ~ "F1 hybrid",
+                                                                  pHybrid <= 0.36 & pHybrid > 0.3 ~ "F2 hybrid?",
+                                                                  pHybrid <= 0.3 & pHybrid > 0.01 ~ "F2 dalli",
+                                                                  pHybrid < 0.01 ~ "F0 dalli"))
+                                                                 
+
+
+
+```
+This is interesting because F1 hybrids could mate with either full P.dalli or full harbor porpoises, we can't exactly tease apart past mating events, but there is an interesting behavioral question of whether F1 hybrids will choose to mate with P.dalli or harbors, or if they will mate with other hybrids...? It looks like there are several matings "F2 hybrids?" whose parents may have been and F1 hybrid pair with an F2 hybrid... yielding a proportion harbor= 0.35ish
+
+Quickly - what are the mtDNA haplotypes for the hybrids? This may help provide context for the directionality of hybridization (typically Ppho M x Pdal F). 
+
+```{r}
+haplo_meta_data<-read.csv("../Data/20230921_metadata_eDNA_combined_haplotypes.csv",na.strings = c("","NA"))
+tossed_individuals_df$haplotype<-haplo_meta_data$Haplotypes[match(tossed_individuals_df$labid,haplo_meta_data$LABID)]
+tossed_individuals_df
+```
+Cool, so 4/5 have Pdal haplotypes and one is NA. Notably, one individual (157167) was filtered out above due to missing data, but has a CR03 Ppho haplotype.
+
+So, lastly- I'm filtering out any individuals who have even slightly introgression of P.dalli alleles. This will be the Ppho_genepop object I will use for further analyses
+
+```{r}
+
+
+tossed_individuals<-rownames(qmatrix.all)[which(qmatrix.all$Pdal<0.90)]
+kept_individuals<-rownames(qmatrix.all)[which(qmatrix.all$Pdal>0.90)]
+
+tossed_ind_states<-species_genepop$other$state[which(indNames(species_genepop)%in%tossed_individuals)]
+tossed_ind_species<-species_genepop$pop[which(indNames(species_genepop)%in%tossed_individuals)]
+length(tossed_individuals) #tossing 16/383 individuals
+table(tossed_ind_states) #5 from AK, 1 CA, 9 WA, 2 OR
+table(tossed_ind_species)
+
+tossed_ind_sample_locations<-species_genepop$other$collection_site[which(indNames(species_genepop)%in%tossed_individuals)]
+table(tossed_ind_sample_locations)
+
+#of the 5 individuals from AK:
+#3 from western bering sea
+#3 from SE Bering Sea
+
+Ppho_genepop<-species_genepop[kept_individuals]
+
+```
+
+## Ppho_genepop includes the coast-wide individuals filtered for:
+
+1) >75% missing data by both loci and individuals
+3) <90% admixture coefficients with Pdalli porpoises
+
+
+
+Now I am going to start over at the beginning and filter only the AK individuals in species_genepop
+
+```{r}
+
+#Setup AK_genepop:
+
+AK_genepop<-original_genepop[meta_data$LABID[which(is.na(meta_data$AK_STRATA_1)==F)],]
+AK_genepop$other$Strata1<-meta_data$AK_STRATA_1[which(meta_data$LABID%in%indNames(AK_genepop))]
+AK_genepop$other$Strata2<-meta_data$AK_STRATA_2[which(meta_data$LABID%in%indNames(AK_genepop))]
+AK_genepop$other$Strata3<-meta_data$AK_STRATA_3[which(meta_data$LABID%in%indNames(AK_genepop))]
+AK_genepop$pop<-factor(AK_genepop$other$Strata1)
+
+#Filter out hybrid individuals:
+AK_genepop<-AK_genepop[kept_individuals]
+
+table(AK_genepop$other$Strata3)
+
+#Filter for Missing Data:
+loc_prop_typed<-propTyped(AK_genepop,by="loc")
+length(which(loc_prop_typed>=0.80))
+length(which(loc_prop_typed>=0.75))
+length(which(loc_prop_typed>=0.70))
+length(which(loc_prop_typed>=0.60))
+length(which(loc_prop_typed>=0.50))
+#changing this filter really doesnt do much
+
+AK_genepop<-AK_genepop[loc=loc_prop_typed>=0.75] # loci typed in >=75% of inds
+
+
+hist(loc_prop_typed)
+
+ind_prop_typed<-propTyped(AK_genepop,by="ind")
+tossed_ind<-which(ind_prop_typed<=0.75)
+length(which(ind_prop_typed>=0.75))
+length(which(ind_prop_typed>=0.8))
+length(which(ind_prop_typed>=0.90))
+length(which(ind_prop_typed>=0.95))
+
+hist(ind_prop_typed)
+tossed_inds_df<-meta_data[which(meta_data$LABID%in%names(tossed_ind)),]
+table(tossed_inds_df$AK_STRATA_2)
+
+
+AK_genepop<-AK_genepop[which(ind_prop_typed>=0.75),] # individuals typed in >=75% of individuals
+
+#Filter out loci that are not polymorphic at all (six)
+Poly_true<-rownames(as.data.frame(which(isPoly(AK_genepop)==TRUE)))
+Poly_false<-rownames(as.data.frame(which(isPoly(AK_genepop)==FALSE)))
+AK_genepop<-AK_genepop[loc=Poly_true]
+
+
+
+```
+
+HWE and LD:
+
+```{r}
+#LD_MT_AK<-read.csv("linkage.genepop.AK_loc_data_AK_holm_adjusted.txt")
+#Commenting code after running: 
+#LD_genepop_GOA<-AK_genepop[which(AK_genepop$other$Strata1=="GOA")]
+#LD_genepop_EBS<-AK_genepop[which(AK_genepop$other$Strata1=="EASTERN_BS")]
+#
+#LD_gtypes_GOA<-genind2gtypes(LD_genepop_GOA)
+#LD_gtypes_EBS<-genind2gtypes(LD_genepop_EBS)
+#
+##This can take ~8 hours to run
+#LD_GOA <- LDgenepop(LD_gtypes_GOA, delete.files = FALSE, label = "linkage.genepop.GOA", #dememorization =  1000, batches = 100, iterations = 5000)
+#LD_EBS <- LDgenepop(LD_gtypes_EBS, delete.files = FALSE, label = "linkage.genepop.EBS", #dememorization =  1000, batches = 100, iterations = 5000)
+#defaults: dem = 1000, batches = 100, iter = 5000
+#write.csv(LD_GOA,"../Data/linkage_out_GOA_dem1000_b100_iter_5000.csv")
+#write.csv(LD_EBS,"../Data/linkage_out_GOA_dem1000_b100_iter_5000.csv")
+LD_GOA<-read.csv("../Data/linkage_out_GOA_dem1000_b100_iter_5000.csv", row.names = 1)
+LD_EBS<-read.csv("../Data/linkage_out_EBS_dem1000_b100_iter_5000.csv", row.names = 1)
+
+#Taking out comparisons from loci that are not polymorphic
+#If I run this LD analyses again, I don't need to run this, as I should have (and now do) filter these out in the chunk above^
+LD_GOA<-LD_GOA[-which(LD_GOA$Locus.1%in%Poly_false | LD_GOA$Locus.2%in%Poly_false),]
+LD_EBS<-LD_EBS[-which(LD_EBS$Locus.1%in%Poly_false | LD_EBS$Locus.2%in%Poly_false),]
+
+
+# add correction for multiple tests
+LD_holm_GOA <- p.adjust(LD_GOA$p.value, method = "holm", n = length(LD_GOA$p.value))
+LD_holm_EBS <- p.adjust(LD_EBS$p.value, method = "holm", n = length(LD_EBS$p.value))
+
+# p.adjust.methods 
+#c("holm", "hochberg", "hommel", "bonferroni", "BH", "BY", "fdr", "none")
+LD_MT_GOA <- cbind(LD_GOA, LD_holm_GOA)
+LD_MT_EBS <- cbind(LD_EBS, LD_holm_EBS)
+
+write.csv(LD_MT_GOA,"../Data/linkage.genepop.AK_loc_data_GOA_holm_adjusted.txt")
+write.csv(LD_MT_EBS,"../Data/linkage.genepop.AK_loc_data_EBS_holm_adjusted.txt")
+
+
+sig.LD.pairs_GOA<-LD_MT_GOA[which(LD_MT_GOA$LD_holm_GOA<1),]
+sig.LD.pairs_EBS<-LD_MT_EBS[which(LD_MT_EBS$LD_holm_EBS<1),]
+sig.LD.pairs_GOA
+sig.LD.pairs_EBS
+
+LD_MT_EBS[which(rownames(LD_MT_EBS)%in%c(20659,21127,35444)),]
+
+AK_summary<-basic.stats(AK_genepop)
+AK_summary$pop.freq$Loc_348
+AK_summary$pop.freq$Loc_419
+AK_summary$pop.freq$Loc_113
+AK_summary$pop.freq$Loc_424
+
+# No loci are in significant LD in both GOA and the EBS
+
+```
+
+```{r}
+#uses Pegas' hw.test, batches=1000
+
+#LD_genepop_GOA<-AK_genepop[which(AK_genepop$other$Strata1=="GOA")]
+#LD_genepop_EBS<-AK_genepop[which(AK_genepop$other$Strata1=="EASTERN_BS")]
+#LD_gtypes_GOA<-genind2gtypes(LD_genepop_GOA)
+#LD_gtypes_EBS<-genind2gtypes(LD_genepop_EBS)
+#
+#hwe_GOA<-hweTest(LD_gtypes_GOA, use.genepop = FALSE,
+#  delete.files = TRUE,batches = 1000, label = "HWE.GOA")
+#hwe_EBS<-hweTest(LD_gtypes_EBS, use.genepop = FALSE,
+#  delete.files = TRUE,batches = 1000, label = "HWE.EBS")
+#
+##dememorization = 10,000
+##batches = 1000
+##num.rep = 5000
+#
+## p.adjust.methods c("holm", "hochberg", "hommel", "bonferroni", "BH", "BY",
+##   "fdr", "none")
+#hwe_MT_GOA <- cbind(hwe_GOA, hwe_GOA_holm_p)
+#hwe_MT_EBS <- cbind(hwe_EBS, hwe_EBS_holm_p)
+#
+#
+#colnames(hwe_MT_GOA)[1] <- "hwe p-value"
+#colnames(hwe_MT_EBS)[1] <- "hwe p-value"
+#
+#write.csv(hwe_MT_GOA, "../Data/HWE_mt_correct_GOA.csv")
+#write.csv(hwe_MT_EBS, "../Data/HWE_mt_correct_EBS.csv")
+
+hwe_MT_GOA<-read.csv("../Data/HWE_mt_correct_GOA.csv")
+hwe_MT_EBS<-read.csv("../Data/HWE_mt_correct_EBS.csv")
+
+toss.hwe.GOA<-as.character(hwe_MT_GOA$X[which(hwe_MT_GOA$hwe_GOA_holm_p<=0.05)])
+toss.hwe.EBS<-as.character(hwe_MT_EBS$X[which(hwe_MT_EBS$hwe_EBS_holm_p<=0.05)])
+
+length(toss.hwe.GOA)
+length(toss.hwe.EBS)
+
+toss.hwe<-toss.hwe.EBS[which(toss.hwe.EBS%in%toss.hwe.GOA)]
+
+keep.hwe<-locNames(AK_genepop)[which(!locNames(AK_genepop)%in%toss.hwe)]
+
+AK_genepop<-AK_genepop[loc=keep.hwe]
+
+#2 loci tossed due to HWE, note 56 loci are out of HWE in the GOA.
+
+```
+
+Filtering loci with MAF <0.05. No monomorphic loci detected.
+```{r}
+MAF_AK<-minorAllele(AK_genepop)
+MAF_keep<-names(which(MAF_AK>=0.05))
+length(MAF_keep)
+AK_genepop<-AK_genepop[loc=MAF_keep]
+
+
+toss_MAF<-(names(which(MAF_AK<0.05)))
+names(which(MAF_AK==0)) #none are monomorphic
+
+```
+
+Lastly, filtering for Ho-He >0.2
+```{r}
+##He and Ho
+table(AK_genepop$pop)
+
+AK_basic<-basic.stats(AK_genepop)
+Ho_He<-as.data.frame(AK_basic$Ho-AK_basic$Hs)
+length(which(abs(Ho_He$GOA)>0.2 & abs(Ho_He$EASTERN_BS)>0.2))
+toss_loc_He_Ho<-rownames(Ho_He)[which(abs(Ho_He$GOA)>0.2 & abs(Ho_He$EASTERN_BS)>0.2)]
+length(toss_loc_He_Ho)
+
+hist(Ho_He$GOA,breaks=100)
+hist(Ho_He$EASTERN_BS,breaks=100)
+
+
+AK_genepop<-AK_genepop[loc=which(!locNames(AK_genepop)%in%toss_loc_He_Ho)]
+
+#283? loci when not Ho-He filtered, 244 when filtered
+
+#how many loci are tossed here that were not in hwe in the GOA?
+
+which(toss_loc_He_Ho%in%toss.hwe.GOA)
+
+
+```
+
+
+This script:
+Includes all coastwide samples for species assignments, summary stats & hybrid analyses
+Includes just AK individuals to establish the AK_genepop and AK_genepop_Ho_filtered objects
+
+DAPC scripts:
+Exclude samples that fall outside the yellow boundaries for pop gen analyses (i.e. Nome, Central Al)
+Excluded BC samples from pop gen analyses
+Test for pop’n differentiation using a priori groupings at 3 levels:
+
+- Sample colors (Strata_3) these are unchanged, but number of a priori strata now decreased to leave out strata with <5 samples (Nome, Kodiak, Central_Aleutians)
+- Blue Boxes (Strata_2) ***these have changed from original assignments!
+- Yellow Boxes (Strata_1) ***these have changed from original assignments!
+
+
+
+Save Workspace 
+
+```{r}
+save.image(file="SNP_Data_Exploration_Basic_Stats_and_Filtering_Workspace.RData")
+
+```
+
+

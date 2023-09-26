@@ -1,0 +1,124 @@
+---
+title: "Haplotype_DAPCs"
+author: "Sam"
+date: "5/18/2020"
+output: pdf_document
+---
+
+DAPC plots to mimic those in the SNP_DAPC script, eDNA and tissue sample data are combined and all sequences are assumed to be individual samples. 
+
+There are a couple samples with no Strata3 label - why is this?
+
+```{r}
+load("Haplotype_Data_Exploration.RData")
+
+```
+
+# DAPCs By a priori Strata
+
+## Strata 1
+```{r}
+haplos_genind$pop<-as.factor(haplos_genind$other$Strata1)
+Strata1_DAPC<- dapc(haplos_genind,pop=haplos_genind$pop,n.pca = 100,n.da=3) #Retain most and identify optimal
+
+a_score_strata1<-optim.a.score(Strata1_DAPC,n.sim = 100,n.da=3)
+
+Strata1_DAPC<- dapc(haplos_genind,pop=haplos_genind$pop,n.pca = a_score_strata1$best,n.da=3)
+
+scatter(Strata1_DAPC,1,2,grp = haplos_genind$pop,pch=16,
+        posi.da="bottomleft",col=brewer.pal(4,"Dark2"),
+        legend=T, clabel = 0,ratio.da = .25,
+        posi.pca = "bottomright",scree.pca = T)
+
+find.clusters(haplos_genind,n.pca = a_score_strata1$best) #12 clusters?? 8??
+```
+
+## Strata 2
+```{r}
+haplos_genind$pop<-as.factor(haplos_genind$other$Strata2)
+
+#remove strata2 NAs
+haplos_genind_strata2<-haplos_genind[which(is.na(haplos_genind$pop)==F)]
+
+Strata2_DAPC<- dapc(haplos_genind_strata2,pop=haplos_genind_strata2$pop,n.pca = 110,n.da=5) #Retain most and identify optimal
+
+a_score_strata2<-optim.a.score(Strata2_DAPC)
+
+Strata2_DAPC<- dapc(haplos_genind_strata2,pop=haplos_genind_strata2$pop,n.pca = a_score_strata2$best,n.da=3)
+
+
+scatter(Strata2_DAPC,1,2,grp = haplos_genind_strata2$pop,pch=16,
+        posi.da="bottomleft",col=brewer.pal(6,"Dark2"),
+        legend=T, clabel = 0,ratio.da = .25,
+        posi.pca = "bottomright",scree.pca = T)
+
+find.clusters(haplos_genind) #12 clusters??
+```
+WBS and EBS cluster together here but not with SNPS :)
+
+## Strata 3
+```{r}
+haplos_genind$pop<-as.factor(haplos_genind$other$Strata3)
+popNames(haplos_genind)<-c("BARROW","COOK","COPPER","N_SEAK","NE_BERING","S_SEAK","SE_BERING","W_BERING","YAKUTAT")
+
+#remove strata2 NAs and <5inds
+haplos_genind_strata3<-haplos_genind[which(is.na(haplos_genind$pop)==F)]
+table(haplos_genind_strata3$pop)
+
+haplos_genind_strata3<-haplos_genind_strata3[!haplos_genind_strata3$pop%in%c("W_BERING","SE_BERING")]
+
+Strata3_DAPC<- dapc(haplos_genind_strata3,pop=haplos_genind_strata3$pop,n.da=6,n.pca=100) #Retain most and identify optimal
+a_score_strata3<-optim.a.score(Strata3_DAPC,n.sim = 1000,n.da=6)
+
+Strata3_DAPC<- dapc(haplos_genind_strata3,pop=haplos_genind_strata3$pop,n.pca=a_score_strata3$best,n.da=6)
+
+colz<-c("gold","tan","green","blue","black","purple","hotpink","darkorange","darkblue")
+
+scatter(Strata3_DAPC,1,2,grp = haplos_genind_strata3$pop,pch=16,
+        posi.da="bottomleft",col=colz,
+        legend=T, clabel = 0,ratio.da = .25,
+        posi.pca = "bottomright",scree.pca = T)
+
+```
+super interesting.
+
+If we remove barrow...
+
+
+## Strata 3
+```{r}
+
+haplos_genind_strata3.2<-haplos_genind_strata3[!haplos_genind_strata3$pop%in%c("BARROW")]
+
+Strata3.2_DAPC<- dapc(haplos_genind_strata3.2,pop=haplos_genind_strata3.2$pop,n.da=5,n.pca=100) #Retain most and identify optimal
+a_score_strata3.2<-optim.a.score(Strata3.2_DAPC,n.sim = 1000,n.da=5)
+
+Strata3.2_DAPC<- dapc(haplos_genind_strata3.2,pop=haplos_genind_strata3.2$pop,n.pca=a_score_strata3.2$best,n.da=5)
+
+colz<-c("tan","green","blue","black","purple","hotpink","darkorange","darkblue")
+
+scatter(Strata3.2_DAPC,1,2,grp = haplos_genind_strata3.2$pop,pch=16,
+        posi.da="bottomleft",col=colz,
+        legend=T, clabel = 0,ratio.da = .25,
+        posi.pca = "bottomright",scree.pca = T)
+
+```
+
+Combining 3 and 3.2:
+
+```{r}
+par(mfrow=c(1,2))
+
+colz<-c("gold","tan","green","blue","black","purple","hotpink","darkorange","darkblue")
+scatter(Strata3_DAPC,1,2,grp = haplos_genind_strata3$pop,pch=16,
+        posi.da="bottomleft",col=colz,
+        legend=T, clabel = 0,ratio.da = .25,
+        posi.pca = "bottomright",scree.pca = T, posi.leg = "topleft")
+
+colz<-c("tan","green","blue","black","purple","hotpink","darkorange","darkblue")
+scatter(Strata3.2_DAPC,1,2,grp = haplos_genind_strata3.2$pop,pch=16,
+        posi.da="bottomleft",col=colz,
+        legend=F, clabel = 0,ratio.da = .25,
+        posi.pca = "bottomright",scree.pca = T)
+
+```

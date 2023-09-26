@@ -1,0 +1,398 @@
+---
+title: "Haplotype_Data_Exploration_Basic_Stats_and_Filtering"
+author: "Sam"
+date: "5/1/2020"
+output: pdf_document
+---
+
+This script should be relatively parallel to the SNP data exploration script. 
+
+Requirements
+```{r, results="hide",warning=F,message=F}
+#Session > Set Working Directory > to Source File Location
+
+library(tidyverse)
+library(genetics)
+library(adegenet)
+library(hierfstat)
+library(mapplots) 
+library(mapproj)
+library(fields)
+library(RColorBrewer)
+#library(BiocManager)
+#BiocManager::install("LEA",update = F)
+#install.packages("LEA_1.4.0_tar.gz", repos = NULL, type ="source")
+#.libPaths("C:/Users/End User/AppData/Local/Temp/Rtmpcj7Pso/downloaded_packages")
+library(LEA)
+library(ggpubr)
+#install.packages("https://cran.r-project.org/src/contrib/Archive/apex/apex_1.0.4.tar.gz")
+
+library(devtools)
+
+#devtools::install_github('ericarcher/strataG')
+
+library(strataG)
+library(usedist)
+library(ape)
+
+#install.packages("qgraph")
+#install.packages("https://cran.r-project.org/src/contrib/Archive/diveRsity/diveRsity_1.9.90.tar.gz")
+library(diveRsity)
+library(phangorn)
+library(seqinr)
+
+```
+
+
+# Data: 
+
+Tissue samples and eDNA metadata are combined in one csv file where strata are defined in the AK_Strata columns, with a new column 'SampleType' so I can easily parse them if needed. Haplotypes are the "TopHaplotypes" from the eDNA data. 
+
+We can treat the eDNA data as individuals and merge it with the tissue sampled mtDNA haplotypes in the metadata$Haplotypes column. There are several eDNA samples (HP08, HP74,and HP78) that yielded two haplotypes, these are separate rows appended with _1 and _2. Data are filtered by column 'FilterReps_1Keep_2Remove' to remove technical replicates
+
+```{r, results="hide",warning=F}
+
+### HAPLOTYPE SEQUENCES ###
+haplos<-strataG::read.fasta("../Data/ppho_derep_alignment_12112020.fasta") # new alignment with 2019
+
+#### Metadata and eDNA haplotypes combined file####
+meta_data<-read.csv("../Data/20230921_metadata_eDNA_combined_haplotypes.csv",na.strings = c("","NA")) #new
+#Filter out technical replicates: all from SEAK North
+meta_data %>% filter(FilterReps_1Keep_2Remove==2)
+meta_data<-meta_data %>% filter(FilterReps_1Keep_2Remove==1)
+
+#Shortening Strata Names:
+meta_data$AK_STRATA_1<-stringr::str_replace_all(meta_data$AK_STRATA_1,"CHUKCHI-N.BERING","CHUK")
+meta_data$AK_STRATA_1<-stringr::str_replace_all(meta_data$AK_STRATA_1,"BERING_SEA","BS")
+meta_data$AK_STRATA_1<-stringr::str_replace_all(meta_data$AK_STRATA_1,"GULF_OF_AK","GOA")
+meta_data$AK_STRATA_1<-stringr::str_replace_all(meta_data$AK_STRATA_1,"GULF OF AK","GOA")
+
+meta_data$AK_STRATA_2<-stringr::str_replace_all(meta_data$AK_STRATA_2,"BARROW","BAR")
+meta_data$AK_STRATA_2<-stringr::str_replace_all(meta_data$AK_STRATA_2,"WESTERN_BERING_SEA","WBS")
+meta_data$AK_STRATA_2<-stringr::str_replace_all(meta_data$AK_STRATA_2,"EASTERN_BERING_SEA","EBS")
+meta_data$AK_STRATA_2<-stringr::str_replace_all(meta_data$AK_STRATA_2,"WESTERN_GOA","WGOA")
+meta_data$AK_STRATA_2<-stringr::str_replace_all(meta_data$AK_STRATA_2,"EASTERN_GOA","EGOA")
+meta_data$AK_STRATA_2<-stringr::str_replace_all(meta_data$AK_STRATA_2,"EASTERN GOA","EGOA")
+meta_data$AK_STRATA_2<-stringr::str_replace_all(meta_data$AK_STRATA_2,"CENTRAL_ALEUTIANS","CA")
+
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"KOTZEBUE","KOTZ")
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"WESTERN_BERING_SEA","WBS")
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"NORTHEAST_BERING_SEA","NEBS")
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"SOUTHEAST_BERING_SEA","SEBS")
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"COOK_INLET","COOK")
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"COPPER_RIVER","COPPER")
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"SEAK_NORTH","N_SEAK")
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"SEAK_SOUTH","S_SEAK")
+
+#We tested to see if these samples were differentiated from N and S SEAK.
+#They were differentiated from S_SEAK but not from N_SEAK - so we are calling them N_SEAK henceforth.
+#meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"SEAK_INTERMEDIATE","INT_SEAK")
+
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"SEAK_INTERMEDIATE","N_SEAK")
+meta_data$AK_STRATA_3<-stringr::str_replace_all(meta_data$AK_STRATA_3,"INT_SEAK","N_SEAK")
+
+```
+
+## Assign States
+```{r}
+xy<-meta_data[,c('Longitude','Latitude')]
+state<-xy$Latitude
+
+#Probably easilest to just assign state by longitude
+state[which(xy$Latitude<41.999)]<-"CA"
+state[which(xy$Latitude<46.26 & xy$Latitude>41.999)]<-"OR"
+state[which(xy$Latitude>46.26 & xy$Latitude<48.999)]<-"WA"
+state[which(xy$Latitude>48.999 & xy$Latitude<54.7)]<-"BC"
+state[which(xy$Latitude>54.7)]<-"AK"
+
+meta_data$State<-state
+
+```
+
+gtype haplotypes object to genind object
+
+- remove individuals with no haplotypes (NAs) or where the haplotypes are not provided in the fasta sequences file.
+
+```{r}
+
+#which haplotypes are missing from AK Ppho inds?
+missing_seqs_AK<-as.character(unique(meta_data$Haplotypes[which(!meta_data$Haplotypes%in%names(haplos) & meta_data$State=="AK")]))
+missing_seqs_AK #none, good.
+
+meta_data_AK<-meta_data%>%filter(is.na(AK_STRATA_1)==F & is.na(Haplotypes)==F)
+table(meta_data_AK$SampleType)
+
+#create a gtype object with strataG
+seq.df<-meta_data_AK[,c("Genetic_ID","Haplotypes")]
+haplos_gtype<-df2gtypes(seq.df,ploidy=1,sequences=haplos,id.col = 1,loc.col=2)
+
+AK_haplos<-haplos[which(names(haplos)%in%meta_data_AK$Haplotypes | names(haplos)%in%c("Pdal01","Pdal04"))]
+write.FASTA(AK_haplos,"../Data/Ppho_Pdal_alignment_379bp_AK_only.fasta")
+
+AK_haplos_filtered<-haplos[which(names(haplos)%in%meta_data_AK$Haplotypes)]
+
+#convert to genind object to mimic SNP analyses
+haplos_seqs<-expandHaplotypes(haplos_gtype)
+haplos_genind<-gtypes2genind(haplos_seqs)
+
+#assign 'other' slot for state, xy, and strata
+haplos_genind$other$state<-meta_data_AK$State
+haplos_genind$other$xy<-meta_data_AK[,c("Longitude","Latitude")]
+haplos_genind$other$Strata1<-meta_data_AK$AK_STRATA_1
+haplos_genind$other$Strata2<-meta_data_AK$AK_STRATA_2
+haplos_genind$other$Strata3<-meta_data_AK$AK_STRATA_3
+
+haplo_counts<-tibble(haplo=names(table(meta_data_AK$Haplotypes)),n=table(meta_data_AK$Haplotypes)) %>% filter(n>0)
+nrow(haplo_counts)
+min(haplo_counts$n)
+max(haplo_counts$n)
+
+AK_haplos_genind<-haplos_genind[which(haplos_genind$other$state=="AK")]
+
+
+
+```
+
+
+Summary of haplotypes by strata
+```{r}
+
+#STRATA 1
+strata1_haplos_summary<-meta_data_AK%>%group_by(AK_STRATA_1)%>%summarise(haplos=paste(unique(Haplotypes),collapse = " ,"))%>%drop_na(AK_STRATA_1)
+print(strata1_haplos_summary)
+strata1_haplos_summary_all<-meta_data_AK%>%group_by(Haplotypes,AK_STRATA_1)%>%summarise(n=n())%>%drop_na(AK_STRATA_1)
+print(strata1_haplos_summary_all,n=50)
+strata1_haplos_count<-meta_data_AK%>%drop_na(AK_STRATA_1)%>%group_by(AK_STRATA_1)%>%summarise(haplos=n_distinct(Haplotypes))
+strata1_haplos_count
+
+#STRATA 2
+strata2_haplos_summary<-meta_data_AK%>%group_by(AK_STRATA_2)%>%summarise(haplos=paste(unique(Haplotypes),collapse = " ,"))%>%drop_na(AK_STRATA_2)
+print(strata2_haplos_summary)
+strata2_haplos_summary_all<-meta_data_AK%>%group_by(Haplotypes,AK_STRATA_2)%>%summarise(n=n())%>%drop_na(AK_STRATA_2)
+print(strata2_haplos_summary_all,n=50)
+strata2_haplos_count<-meta_data_AK%>%drop_na(AK_STRATA_2)%>%group_by(AK_STRATA_2)%>%summarise(haplos=n_distinct(Haplotypes))
+strata2_haplos_count
+
+#STRATA 3
+strata3_haplos_summary<-meta_data_AK%>%group_by(AK_STRATA_3)%>%summarise(haplos=paste(unique(Haplotypes),collapse = " ,"))%>%drop_na(AK_STRATA_3)
+print(strata3_haplos_summary)
+strata3_haplos_summary_all<-meta_data_AK%>%group_by(Haplotypes,AK_STRATA_3)%>%summarise(n=n())%>%drop_na(AK_STRATA_3)
+print(strata3_haplos_summary_all,n=50)
+strata3_haplos_count<-meta_data_AK%>%drop_na(AK_STRATA_3)%>%group_by(AK_STRATA_3)%>%summarise(haplos=n_distinct(Haplotypes))
+strata3_haplos_count
+
+meta_data_AK%>%drop_na(AK_STRATA_3,Haplotypes)%>%group_by(AK_STRATA_3)%>%summarise(samples=n())
+
+
+
+```
+
+
+
+# Pairwise Fst
+
+### Pairwise Fst and PhiST between different strata
+
+Quickly, which model is best suited to the data?
+```{r}
+haplo_phyDat<-as.phyDat(AK_haplos_filtered)
+test.out<-modelTest(haplo_phyDat)
+test.out.basic<-test.out%>%filter(Model%in%c("JC","F81","K80","HKY","SYM","GTR"))
+test.out$Model[which(test.out$AICc==min(test.out$AICc))]
+test.out$Model[which(test.out$AIC==min(test.out$AIC))]
+test.out$Model[which(test.out$BIC==min(test.out$BIC))]
+
+test.out.basic$Model[which(test.out.basic$AICc==min(test.out.basic$AICc))]
+test.out.basic$Model[which(test.out.basic$AIC==min(test.out.basic$AIC))]
+test.out.basic$Model[which(test.out.basic$BIC==min(test.out.basic$BIC))]
+
+
+```
+
+#PhiST and Fst and significance
+```{r}
+
+
+
+#### STRATA 1 ####
+seq.df<-meta_data_AK[,c("Genetic_ID","AK_STRATA_1","AK_STRATA_2","AK_STRATA_3","Haplotypes")] %>%drop_na(AK_STRATA_1)
+seq.df %>% group_by(AK_STRATA_1) %>% dplyr::summarize(n())
+
+strata1_gtype<-df2gtypes(seq.df,ploidy=1,sequences=haplos,id.col = 1,loc.col=5,strata.col = 2)
+
+
+phist_strata1<-strataG::pairwiseTest(strata1_gtype,nrep = 1000)
+
+##PhiST pairwise - upper triangle are p-values, lower triangle are PhiST
+phi_st1<-round(pairwiseMatrix(phist_strata1,stat = "PHIst"),4)
+##Fst pairwise - upper triangle are p-values, lower triangle are Fst
+F_st1<-round(pairwiseMatrix(phist_strata1,stat = "Fst"),4)
+
+#Converting this to how we want it in the text:
+phi_st1<-t(phi_st1) #invert the matrix if you want the test statistic (table3). Don't if you want the p-value (table S3)
+F_st1<-t(F_st1)
+n = 4
+# Find upper and lower triangles of the matrix
+upper_triangle <- upper.tri(phi_st1)
+lower_triangle <- lower.tri(phi_st1)
+
+# Create a new matrix with the concatenated values in the upper triangle
+concatenated_values <- matrix("", n, n)
+concatenated_values[upper_triangle] <- paste0(F_st1[upper_triangle], "|", phi_st1[upper_triangle])
+
+# Add asterisks where values in the lower triangle are significant (p<0.05)
+significant <- F_st1 < 0.05 & lower_triangle
+concatenated_values[significant] <- paste0(concatenated_values[significant], "*")
+
+# Print the result
+print(concatenated_values)
+write.csv(concatenated_values,"../Data/Strata1_PhiSTFst_mtDNA.csv")
+
+#### STRATA 2 ####
+seq.df<-meta_data_AK[,c("Genetic_ID","AK_STRATA_1","AK_STRATA_2","AK_STRATA_3","Haplotypes")] %>%drop_na(AK_STRATA_2)
+seq.df %>% group_by(AK_STRATA_2) %>% dplyr::summarize(n())
+
+
+strata2_gtype<-df2gtypes(seq.df,ploidy=1,sequences=haplos,id.col = 1,loc.col=5,strata.col = 3)
+
+
+phist_strata2<-pairwiseTest(strata2_gtype,nrep = 1000)
+
+##PhiST pairwise - upper triangle are p-values, lower triangle are PhiST
+phi_st2<-round(pairwiseMatrix(phist_strata2,stat = "PHIst"),4)
+##Fst pairwise - upper triangle are p-values, lower triangle are Fst
+F_st2<-round(pairwiseMatrix(phist_strata2,stat = "Fst"),4)
+
+#Converting this to how we want it in the text:
+#phi_st2<-t(phi_st2)
+#F_st2<-t(F_st2)
+n = 6
+# Find upper and lower triangles of the matrix
+upper_triangle <- upper.tri(phi_st2)
+lower_triangle <- lower.tri(phi_st2)
+
+# Create a new matrix with the concatenated values in the upper triangle
+concatenated_values <- matrix("", n, n)
+concatenated_values[upper_triangle] <- paste0(F_st2[upper_triangle], "|", phi_st2[upper_triangle])
+
+# Add asterisks where values in the lower triangle are significant (p<0.05)
+significant <- F_st2 < 0.05 & lower_triangle
+concatenated_values[significant] <- paste0(concatenated_values[significant], "*")
+
+# Print the result
+print(concatenated_values)
+write.csv(concatenated_values,"../Data/Strata2_PhiSTFst_mtDNA.csv")
+
+#### STRATA 3 ####
+seq.df<-meta_data_AK[,c("Genetic_ID","AK_STRATA_1","AK_STRATA_2","AK_STRATA_3","Haplotypes")] %>%drop_na(AK_STRATA_3)
+seq.df %>% group_by(AK_STRATA_3) %>% dplyr::summarize(n())
+
+strata3_gtype<-df2gtypes(seq.df,ploidy=1,sequences=haplos,id.col = 1,loc.col=5,strata.col = 4)
+
+
+phist_strata3<-pairwiseTest(strata3_gtype,nrep = 1000)
+
+##PhiST pairwise - upper triangle are p-values, lower triangle are PhiST
+phi_st3<-round(pairwiseMatrix(phist_strata3,stat = "PHIst"),4)
+##Fst pairwise - upper triangle are p-values, lower triangle are Fst
+F_st3<-round(pairwiseMatrix(phist_strata3,stat = "Fst"),4)
+
+#Converting this to how we want it in the text:
+#phi_st3<-t(phi_st3)
+#F_st3<-t(F_st3)
+n = 9
+# Find upper and lower triangles of the matrix
+upper_triangle <- upper.tri(phi_st3)
+lower_triangle <- lower.tri(phi_st3)
+
+# Create a new matrix with the concatenated values in the upper triangle
+concatenated_values <- matrix("", n, n)
+concatenated_values[upper_triangle] <- paste0(F_st3[upper_triangle], "|", phi_st3[upper_triangle])
+
+# Add asterisks where values in the lower triangle are significant (p<0.05)
+significant <- F_st3 < 0.05 & lower_triangle
+concatenated_values[significant] <- paste0(concatenated_values[significant], "*")
+
+# Print the result
+print(concatenated_values)
+write.csv(concatenated_values,"../Data/Strata3_PhiSTFst_mtDNA.csv")
+
+
+
+#### SEAK #### 3 categories
+#seq.df<-meta_data_AK[,c("Genetic_ID","AK_STRATA_1","AK_STRATA_2","AK_STRATA_3","Haplotypes")]%>%
+#  drop_na(AK_STRATA_3)%>%filter(AK_STRATA_3%in%c("N_SEAK","S_SEAK","INT_SEAK"))
+#
+#SEAK_3_gtype<-df2gtypes(seq.df,ploidy=1,sequences=haplos,id.col = 1,loc.col=5,strata.col = 4)
+#
+#
+#phist_SEAK_strata3<-pairwiseTest(SEAK_3_gtype,nrep = 1000)
+#
+###PhiST pairwise - upper triangle are p-values, lower triangle are PhiST
+#pairwiseMatrix(phist_SEAK_strata3,stat = "PHIst")
+###Fst pairwise - upper triangle are p-values, lower triangle are Fst
+#pairwiseMatrix(phist_SEAK_strata3,stat = "Fst")
+##### SEAK 2016 vs 2019 ####
+
+
+```
+
+The 2019 intermediate samples are significantly different from S_SEAK but not from N_SEAK - these samples will now be called as N_SEAK for the remainder of analyses.
+PHIst (upper triangle p-values, lower triangle PHIst values):
+           INT_SEAK    N_SEAK S_SEAK
+INT_SEAK         NA 0.0920000  0.013
+N_SEAK   0.05281505        NA  0.001
+S_SEAK   0.16540558 0.2276258     NA
+
+Same for Fst (although p = 0.049 is cutting it close ;)
+           INT_SEAK    N_SEAK S_SEAK
+INT_SEAK         NA 0.0920000  0.048
+N_SEAK   0.04524258        NA  0.001
+S_SEAK   0.09225187 0.1253411     NA
+
+2016 vs 2019
+```{r}
+seq.df<-meta_data_AK[,c("Genetic_ID","Year","AK_STRATA_1","AK_STRATA_2","AK_STRATA_3","Haplotypes")]%>%drop_na(AK_STRATA_3)%>%filter(AK_STRATA_3%in%c("N_SEAK","S_SEAK"))
+seq.df$AK_STRATA_3<-paste(seq.df$Year,"_",seq.df$AK_STRATA_3,sep="")
+seq.df<-seq.df%>%filter(!is.na(Year))%>%dplyr::select(!Year)
+SEAK_3_gtype<-df2gtypes(seq.df,ploidy=1,sequences=haplos,id.col = 1,loc.col=5,strata.col = 4)
+seq.df%>%group_by(AK_STRATA_3)%>%summarize(n=n())
+
+
+phist_SEAK<-pairwiseTest(SEAK_3_gtype,nrep = 1000)
+
+##PhiST pairwise - upper triangle are p-values, lower triangle are PhiST
+phi_SEAK<-round(pairwiseMatrix(phist_SEAK,stat = "PHIst"),4)
+##Fst pairwise - upper triangle are p-values, lower triangle are Fst
+F_SEAK<-round(pairwiseMatrix(phist_SEAK,stat = "Fst"),4)
+
+#Converting this to how we want it in the text:
+#phi_SEAK<-t(phi_SEAK)
+#F_SEAK<-t(F_SEAK)
+n = 4
+# Find upper and lower triangles of the matrix
+upper_triangle <- upper.tri(phi_SEAK)
+lower_triangle <- lower.tri(phi_SEAK)
+
+# Create a new matrix with the concatenated values in the upper triangle
+concatenated_values <- matrix("", n, n)
+concatenated_values[upper_triangle] <- paste0(F_SEAK[upper_triangle], "|", phi_SEAK[upper_triangle])
+
+# Add asterisks where values in the lower triangle are significant (p<0.05)
+significant <- F_SEAK < 0.05 & lower_triangle
+concatenated_values[significant] <- paste0(concatenated_values[significant], "*")
+
+# Print the result
+print(t(concatenated_values))
+
+
+
+```
+
+
+
+```{r}
+
+save.image("Haplotype_Data_Exploration.RData")
+
+```

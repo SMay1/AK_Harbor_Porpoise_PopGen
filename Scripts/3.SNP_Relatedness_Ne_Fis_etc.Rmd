@@ -1,0 +1,759 @@
+---
+title: "Relatedness_Ne_Fis_etc"
+author: "Sam"
+date: "5/17/2020"
+output: pdf_document
+---
+
+
+This script uses the Workspace image created in the SNP_DAPC script to access the genind objects for Strata1, Strata2, Strata3, Strata3_filtered (pop.n>5), etc.
+
+Run:
+
+- Fst pairwise between strata pops
+- Fis per Strata pop
+- relatedness within and between strata with **related**
+- Kinship analysis with **Colony2**
+- **CKMRsim** for power for parentage (False Negative and Positive Rates)
+- **CKMRsim** for kinship inference
+
+Requirements:
+```{r, warning=FALSE, results="hide",message=FALSE}
+
+setwd("G:/My Drive/Southeast AK Harbor Porpoise Structure/R_Project/Scripts")
+
+load("SNP_Data_Exploration_Basic_Stats_and_Filtering_Workspace.RData")
+#load("SNP_DAPC_Workspace.RData")
+#load("Relatedness_and_Fstats_Workspace.RData")
+#devtools::install_github(repo="zakrobinson/RLDNe")
+library(RLDNe)
+library(hierfstat)
+library(sendplot)
+library(adegenet)
+library(tidyverse)
+library(ggpubr)
+#library(Related)
+#install.packages("related", repos="http://R-Forge.R-project.org")
+#install.packages("related_1.0.tar.gz", repos=NULL, type="source")
+library(related)
+library(usedist)
+library(zvau)
+library(diveRsity)
+library(CKMRsim)
+```
+
+
+In the DAPC and STRUCTURE script, I removed populations smaller than 5 individuals in each strata. However, I still want the pairwise Fstats for these. 
+
+```{r}
+Strata1_genepop<-AK_genepop
+Strata1_genepop$pop<-as.factor(Strata1_genepop$other$Strata1)
+
+Strata2_genepop<-AK_genepop
+Strata2_genepop$pop<-as.factor(Strata2_genepop$other$Strata2)
+Strata2_genepop<-Strata2_genepop[!is.na(Strata2_genepop$pop)]
+
+Strata3_genepop<-AK_genepop
+Strata3_genepop$pop<-as.factor(Strata3_genepop$other$Strata3)
+Strata3_genepop<-Strata3_genepop[!is.na(Strata3_genepop$pop)]
+
+
+```
+
+
+# Pairwise Fst between populations
+### By Strata
+
+```{r,warning=F,cache=TRUE}
+# Quick, no significance:
+
+strata1_fst<-pairwise.fst(Strata1_genepop)
+strata1_fst<-dist_setNames(strata1_fst,popNames(Strata1_genepop))
+strata1_fst
+
+strata2_fst<-pairwise.fst(Strata2_genepop)
+strata2_fst<-dist_setNames(strata2_fst,popNames(Strata2_genepop))
+strata2_fst
+
+strata3_fst<-pairwise.fst(Strata3_genepop)
+strata3_fst<-dist_setNames(strata3_fst,popNames(Strata3_genepop))
+strata3_fst
+
+
+#Bootstrapping for significance in diveRsity
+#### STRATA 1 #####
+#strata1 genepop
+Strata1_genepop$pop<-factor(Strata1_genepop$other$Strata1)
+
+writeGenPop(Strata1_genepop,"../Data/Pairwise_Fstats/SNPs/Strata1.gen","AK_STRATA1")
+table(Strata1_genepop$pop)
+
+fstats_strata1<-diffCalc(infile = "../Data/Pairwise_Fstats/SNPs/Strata1.gen",outfile = "../Data/Pairwise_Fstats/SNPs/Strata1_pairwise.txt",
+         fst=T,
+         pairwise=T,
+         bs_locus=F,
+         bs_pairwise = T,
+         ci_type = "loci",
+         boots = 1000,para=T)
+
+
+strata1_fst<-(fstats_strata1$pairwise$Fst)
+strata1_fst<-dist_setNames(strata1_fst,popNames(Strata1_genepop))
+strata1_fst<-as.data.frame(as.matrix(strata1_fst))
+which(fstats_strata1$bs_pairwise$Fst$lower>0)
+#Significant: none
+Strata1_genepop$pop[which(indNames(Strata1_genepop)=="156881")]
+Strata1_genepop$pop[which(indNames(Strata1_genepop)=="12595")]
+Strata1_genepop$pop[which(indNames(Strata1_genepop)=="100685")]
+Strata1_genepop$pop[which(indNames(Strata1_genepop)=="12595")]
+
+
+### STRATA 2 ###
+Strata2_genepop$pop<-factor(Strata2_genepop$other$Strata2)
+writeGenPop(Strata2_genepop,"../Data/Pairwise_Fstats/SNPs/Strata2.gen","AK_STRATA2")
+
+table(Strata2_genepop$pop)
+
+fstats_strata2<-diffCalc(infile = "../Data/Pairwise_Fstats/SNPs/Strata2.gen",outfile = "../Data/Pairwise_Fstats/SNPs/Strata2_pairwise.txt",
+         fst=T,
+         pairwise=T,
+         bs_locus=F,
+         bs_pairwise = T,
+         ci_type = "loci",
+         boots = 1000,para=T)
+
+strata2_fst<-(fstats_strata2$pairwise$Fst)
+strata2_fst<-dist_setNames(strata2_fst,popNames(Strata2_genepop))
+strata2_fst<-as.data.frame(as.matrix(strata2_fst))
+which(fstats_strata2$bs_pairwise$Fst$lower>0)
+popNames(Strata2_genepop)
+Strata2_genepop$pop[which(indNames(Strata2_genepop)=="72280")]
+
+#significant pops: BARROW-YAKUTAT
+
+#With this new dataset there is only one significant Fst, as opposed to 3 before.
+
+### STRATA 3 ###
+Strata3_genepop$pop<-factor(Strata3_genepop$other$Strata3)
+writeGenPop(Strata3_genepop,"../Data/Pairwise_Fstats/SNPs/strata3.gen","AK_strata3")
+
+fstats_strata3<-diffCalc(infile = "../Data/Pairwise_Fstats/SNPs/strata3.gen",outfile = "../Data/Pairwise_Fstats/SNPs/strata3_pairwise.txt",
+         fst=T,
+         pairwise=T,
+         bs_locus=F,
+         bs_pairwise = T,
+         ci_type = "loci",
+         boots = 1000,para=T)
+
+strata3_fst<-(fstats_strata3$pairwise$Fst)
+strata3_fst<-dist_setNames(strata3_fst,popNames(Strata3_genepop))
+strata3_fst<-as.data.frame(as.matrix(strata3_fst))
+which(fstats_strata3$bs_pairwise$Fst$lower>0)
+
+#popNames(Strata3_genepop)
+Strata3_genepop$pop[which(indNames(Strata3_genepop)=="12595")]
+#Significant pops: Barrow-NEBS, Barrow-SEBS, Barrow-Yakutat, SEBS-
+
+
+strata3_fst
+
+
+
+```
+
+
+# Fis values by strata 
+using divPart from diveRsity
+
+```{r,cache=TRUE}
+
+##STRATA1
+fis_strata1<-divBasic(infile = "../Data/Pairwise_Fstats/SNPs/Strata1.gen",outfile = "../Data/Pairwise_Fstats/SNPs/Strata1_fis_pairwise.txt",
+         gp=2,bootstraps = 1000,HWEexact = F)
+
+
+fis_df_strata1<-as_tibble(do.call(rbind, (lapply(fis_strata1$fis, function(x) lapply(x, '[', 170)))))%>%unnest(1:5)
+fis_df_strata1$population<-popNames(Strata1_genepop)
+
+fis_df_strata1%>%ggplot(aes(x=population,y=fis)) +
+  geom_point() +
+  ylab("F_is")+
+  geom_errorbar(aes(ymin=BC_lower_CI, ymax=BC_upper_CI), width=.2)
+
+##STRATA2
+fis_strata2<-divBasic(infile = "../Data/Pairwise_Fstats/SNPs/Strata2.gen",outfile = "../Data/Pairwise_Fstats/SNPs/Strata2_fis_pairwise.txt",
+         gp=2,bootstraps = 1000,HWEexact = F)
+
+
+fis_df_strata2<-as_tibble(do.call(rbind, (lapply(fis_strata2$fis, function(x) lapply(x, '[', 170)))))%>%unnest(1:5)
+fis_df_strata2$population<-popNames(Strata2_genepop)
+fis_df_strata2
+
+fis_df_strata2%>%ggplot(aes(x=population,y=fis)) +
+  geom_point() +
+  ylab("F_is")+
+  geom_errorbar(aes(ymin=BC_lower_CI, ymax=BC_upper_CI), width=.2)
+
+
+##STRATA3
+fis_strata3<-divBasic(infile = "../Data/Pairwise_Fstats/SNPs/Strata3.gen",outfile = "../Data/Pairwise_Fstats/SNPs/Strata3_fis_pairwise.txt",
+         gp=2,bootstraps = 1000,HWEexact = F)
+
+
+fis_df_strata3<-as_tibble(do.call(rbind, (lapply(fis_strata3$fis, function(x) lapply(x, '[', 170)))))%>%unnest(1:5)
+fis_df_strata3$population<-popNames(Strata3_genepop)
+fis_df_strata3
+
+fis_df_strata3%>%ggplot(aes(x=population,y=fis)) +
+  geom_point() +
+  ylab("F_is")+
+  geom_errorbar(aes(ymin=BC_lower_CI, ymax=BC_upper_CI), width=.2)
+
+
+##STRATA3_FILTERED
+#fis_strata3_filtered<-divBasic(infile = #"../Data/Pairwise_Fstats/SNPs/Strata3_filtered.gen",outfile = #"../Data/Pairwise_Fstats/SNPs/Strata3_filtered_fis_pairwise.txt",
+#         gp=2,bootstraps = 1000,HWEexact = F)
+#
+#
+#fis_df_strata3_filtered<-as_tibble(do.call(rbind, (lapply(fis_strata3_filtered$fis, function(x) #lapply(x, '[', 170)))))%>%unnest(1:5)
+#fis_df_strata3_filtered$population<-popNames(Strata3_genepop_filtered)
+#fis_df_strata3_filtered
+#
+#fis_df_strata3_filtered%>%ggplot(aes(x=population,y=fis)) +
+#  geom_point() +
+#  ylab("F_is")+
+#  geom_errorbar(aes(ymin=BC_lower_CI, ymax=BC_upper_CI), width=.2)
+
+
+#Combined Plot of the three strata:
+
+fis_df_strata1$strata <- "Strata1"
+fis_df_strata2$strata <- "Strata2"
+fis_df_strata3$strata <- "Strata3"
+fis_df_all<-rbind(fis_df_strata1,fis_df_strata2,fis_df_strata3)
+
+fis_df_all%>%ggplot(aes(x=population,y=fis)) +
+  geom_point() +
+  ylab("F_is")+
+  geom_errorbar(aes(ymin=BC_lower_CI, ymax=BC_upper_CI), width=.2) +
+  facet_grid(strata~.)
+
+
+```
+
+
+Looking at pairwise relatedness between samples:
+Using the package Related, by Wang
+
+grouprel() compares the within-group relatedness to the relatedness of randomly shuffled groups... this is great. 
+
+For this to work, I need all of the individual names to begin with two letters that indicate the populations. And, for this analysis I probably want to get rid of populations with less than 5 individuals - luckily for this, grouprel has a "usedgroups" option so I can set the groups - warning grouprel takes 3-4seconds per iteration, so running 100 takes 5min and 1000 takes like an hour
+
+For now, I will run this with all populations, even those less than 5 inds
+
+Setting up relatedness data files:
+
+```{r}
+popNames(Strata1_genepop)
+Strata1_r<-genind2df(Strata1_genepop,usepop = T,oneColPerAll = T)%>%rownames_to_column(var = "ind")%>%mutate(pop=as.character(pop))
+Strata1_r<-as.matrix(Strata1_r)
+Strata1_r[which(Strata1_r=="NA")]<-"0"
+Strata1_r<-as.data.frame(Strata1_r)
+
+popNames(Strata2_genepop)
+Strata2_r<-genind2df(Strata2_genepop,usepop = T,oneColPerAll = T)%>%rownames_to_column(var = "ind")%>%mutate(pop=as.character(pop))
+Strata2_r<-as.matrix(Strata2_r)
+Strata2_r[which(Strata2_r=="NA")]<-"0"
+Strata2_r<-as.data.frame(Strata2_r)
+
+popNames(Strata3_genepop)
+Strata3_r<-genind2df(Strata3_genepop,usepop = T,oneColPerAll = T)%>%rownames_to_column(var = "ind")%>%mutate(pop=as.character(pop))
+Strata3_r<-as.matrix(Strata3_r)
+Strata3_r[which(Strata3_r=="NA")]<-"0"
+Strata3_r<-as.data.frame(Strata3_r)
+
+```
+
+
+Unfortunately, grouprel does not let you assign your output file name or location, nor does it let you save the output figures... but that's okay. Each simulation needs to be run one at a time, then the output files need to have their names changed before the next one can be run. New files are in Data/related_out
+#WARNING THIS TAKES A LONG TIME
+##grouprel
+```{r,grouprel}
+
+## Strata 1
+Strata1_rel<-Strata1_r
+table(Strata1_r$pop)
+Strata1_rel$pop<-as.character(Strata1_rel$pop)
+Strata1_rel$pop[Strata1_rel$pop=="GOA"]<-"GA"
+Strata1_rel$pop[Strata1_rel$pop=="CHUK"]<-"CH"
+Strata1_rel$pop[Strata1_rel$pop=="EASTERN_BS"]<-"EB"
+Strata1_rel$pop[Strata1_rel$pop=="WESTERN_BS"]<-"WB"
+Strata1_rel$ind<-as.character(paste(Strata1_rel$pop,Strata1_rel$ind,sep = "_"))
+Strata1_rel<-Strata1_rel %>% dplyr::select(-pop)
+
+reldata_S1<-readgenotypedata(genotype.data = Strata1_rel)
+
+grouprel_1<-grouprel(genotypes = reldata_S1$gdata , estimatorname = "wang", usedgroups = "all", iterations = 1000)
+
+expectedrel<-read.csv("expectedrel.csv")
+observedr<-read.csv("observed-r.csv")
+colnames(expectedrel)<-c("rep",as.character(observedr$within),"Overall")
+write.csv(expectedrel,"../Data/related_out/expectedrel_Strata1.csv")
+write.csv(observedr,"../Data/related_out/observed-r_Strata1.csv")
+expectedrel_Strata1<-read.csv("../Data/related_out/expectedrel_Strata1.csv")
+observedr_Strata1<-read.csv("../Data/related_out/observed-r_Strata1.csv")
+
+
+## Strata 2
+Strata2_rel<-Strata2_r
+table(Strata2_r$pop)
+Strata2_rel$pop<-as.character(Strata2_rel$pop)
+Strata2_rel$pop[Strata2_rel$pop=="BAR"]<-"BR"
+Strata2_rel$pop[Strata2_rel$pop=="EBS"]<-"EB"
+Strata2_rel$pop[Strata2_rel$pop=="EGOA"]<-"EG"
+Strata2_rel$pop[Strata2_rel$pop=="WBS"]<-"WB"
+Strata2_rel$pop[Strata2_rel$pop=="WGOA"]<-"WG"
+Strata2_rel$pop[Strata2_rel$pop=="YAKUTAT"]<-"YT"
+Strata2_rel$ind<-as.character(paste(Strata2_rel$pop,Strata2_rel$ind,sep = "_"))
+Strata2_rel<-Strata2_rel %>% dplyr::select(-pop)
+
+reldata_S2<-readgenotypedata(genotype.data = Strata2_rel)
+
+grouprel_1<-grouprel(genotypes = reldata_S2$gdata , estimatorname = "wang", usedgroups = "all", iterations = 1000)
+
+expectedrel<-read.csv("expectedrel.csv")
+observedr<-read.csv("observed-r.csv")
+colnames(expectedrel)<-c("rep",as.character(observedr$within),"Overall")
+write.csv(expectedrel,"../Data/related_out/expectedrel_Strata2.csv")
+write.csv(observedr,"../Data/related_out/observed-r_Strata2.csv")
+expectedrel_Strata2<-read.csv("../Data/related_out/expectedrel_Strata2.csv")
+observedr_Strata2<-read.csv("../Data/related_out/observed-r_Strata2.csv")
+
+
+## Strata 3
+Strata3_rel<-Strata3_r
+table(Strata3_r$pop)
+Strata3_rel$pop<-as.character(Strata3_rel$pop)
+Strata3_rel$pop[Strata3_rel$pop=="BARROW"]<-"BR"
+Strata3_rel$pop[Strata3_rel$pop=="COOK"]<-"CK"
+Strata3_rel$pop[Strata3_rel$pop=="COPPER"]<-"CP"
+#Strata3_rel$pop[Strata3_rel$pop=="KODIAK"]<-"KO"
+Strata3_rel$pop[Strata3_rel$pop=="N_SEAK"]<-"NS"
+Strata3_rel$pop[Strata3_rel$pop=="NEBS"]<-"NB"
+Strata3_rel$pop[Strata3_rel$pop=="S_SEAK"]<-"SS"
+Strata3_rel$pop[Strata3_rel$pop=="SEBS"]<-"SB"
+Strata3_rel$pop[Strata3_rel$pop=="WBS"]<-"WB"
+Strata3_rel$pop[Strata3_rel$pop=="YAKUTAT"]<-"YT"
+Strata3_rel$ind<-as.character(paste(Strata3_rel$pop,Strata3_rel$ind,sep = "_"))
+Strata3_rel<-Strata3_rel %>% dplyr::select(-pop)
+
+reldata_S3<-readgenotypedata(genotype.data = Strata3_rel)
+
+grouprel_1<-grouprel(genotypes = reldata_S3$gdata , estimatorname = "wang", usedgroups = "all", iterations = 1000)
+
+expectedrel<-read.csv("expectedrel.csv")
+observedr<-read.csv("observed-r.csv")
+colnames(expectedrel)<-c("rep",as.character(observedr$within),"Overall")
+write.csv(expectedrel,"../Data/related_out/expectedrel_Strata3.csv")
+write.csv(observedr,"../Data/related_out/observed-r_Strata3.csv")
+expectedrel_Strata3<-as.data.frame(read.csv("../Data/related_out/expectedrel_Strata3.csv"))
+observedr_Strata3<-read.csv("../Data/related_out/observed-r_Strata3.csv")
+
+```
+
+plotting grouprel
+
+```{r}
+observedr$within
+group.names<-c("COOK","N_SEAK","SE_BERING","NE_BERING","BARROW","S_SEAK","W_BERING","COPPER","YAKUTAT")
+observedr_Strata3$within<-group.names
+colnames(expectedrel_Strata3)[3:11]<-group.names
+
+
+vlines<-observedr_Strata3%>%select(-X.1) %>% rename(Population=within,Relatedness=relvalues)
+
+pval.overall<- signif(((sum(expectedrel_Strata3[,ncol(expectedrel_Strata3)] >= mean(observedr_Strata3$relvalues)) + 1)/1000), 3)
+
+counter=1
+pval<-rep(NA,nrow(observedr_Strata3))
+for (k in 1:nrow(observedr_Strata3)){
+pval[counter] <- signif(((sum(expectedrel_Strata3[, k+2] >= observedr_Strata3$relvalues[k]) + 
+      1)/1000), 3)
+counter<-counter+1
+}
+
+vlines$pval<-pval
+
+
+Strata3_grouprel_gg <-expectedrel_Strata3 %>% select(-X,-rep) %>% gather("Population","Relatedness") %>% filter(Population!="Overall") %>%
+  ggplot(aes(x=Relatedness)) + #colz_hex from haplotype netowrk script
+  geom_histogram(aes(fill=Population),color="black",alpha=.5) +
+  geom_vline(data=vlines, aes(xintercept=Relatedness),lty=2) +
+  geom_text(data=vlines,aes(x = -0.4,y=300,label=paste("p<",pval))) +
+  facet_wrap(Population~.,nrow = 2) +
+  scale_fill_manual(values=colz_hex)+
+  theme_classic()+
+  labs(y="Count")+
+  scale_x_continuous(n.breaks = 4)+
+  theme(legend.position = "none")
+
+Strata3_overall_gg<-expectedrel_Strata3 %>% select(-X,-rep) %>% gather("Population","Relatedness") %>% filter(Population=="Overall") %>%
+  ggplot(aes(x=Relatedness)) +
+  xlim(c(-0.25,0.25)) +
+  geom_histogram(fill="black",color="white") +
+  geom_vline(aes(xintercept=mean(observedr_Strata3$relvalues)),lty=2) +
+  geom_text(aes(x = -0.2,y=200,label=paste("p<",pval.overall)))+
+  labs(y="Count")+
+  theme_classic()
+
+ggarrange(Strata3_grouprel_gg,Strata3_overall_gg,ncol = 1,labels = "AUTO")
+
+
+
+```
+
+
+pairwise relatedness among all pairs of individuals
+
+```{r}
+write.table(Strata1_r%>%select(-pop),file="../Data/Relatedness/Strata1_All.txt",sep = " ",row.names = F,col.names = F,quote = F)
+S1_in<-readgenotypedata("../Data/Relatedness/Strata1_All.txt")
+S1_out<-coancestry(genotype.data = S1_in$gdata,error.rates = 0.01,wang = "2", ci95.num.bootstrap = 1000)
+
+pw_relatedness_all<-S1_out
+
+pw_relatedness_all$relatedness$wang
+
+
+```
+
+
+Finally, running Colony2 on all AK individuals. Any immediate relatives in distant populations would be evidence for contemporary dispersal of great distances. I trust the Colony assignments a lot more than just estimating genetic relatedness, and I can compare these two analyses. 
+
+# Setting up Colony2 input files
+For putative males we want all known males + all unknown sexes
+For putative females we want all known females + all unknown sexes
+For putative offspring we want all individuals
+
+We have no sex data for the AK individuals, but if that changes at some point, this code is ready to go. Until then, the input files are all the same.
+```{r}
+
+meta_data<-read.csv("../Data/Q_Ppho_samples_strata_04162020.csv",na.strings = "")%>%mutate(SEX=as.character(SEX))
+inds<-indNames(Strata1_genepop)
+Strata1_genepop_df<-genind2df(Strata1_genepop,usepop = F,oneColPerAll = T)
+
+sex_index<-match(inds,table = meta_data$LABID)
+sex<-meta_data$SEX[sex_index]
+
+Strata1_genepop_df<-cbind(sex,Strata1_genepop_df)%>%
+  rownames_to_column(var = "LABID")%>%mutate(sex=replace(sex,which(sex%in%c("U","")),values = NA))
+
+Strata1_genepop_df[Strata1_genepop_df=="NA"]<-"00"
+Male_input<-Strata1_genepop_df%>%filter(sex%in%c("M",NA))%>%dplyr::select(-sex)
+Female_input<-Strata1_genepop_df%>%filter(sex%in%c("F",NA))%>%dplyr::select(-sex)
+All_input<-Strata1_genepop_df%>%dplyr::select(-sex)
+
+write.table(x = Male_input,file="../Data/Colony_AK_Relatedness/AK_Males_and_Unknowns.txt",quote = F,sep = " ",row.names = F,col.names = F)
+write.table(x = Female_input,file="../Data/Colony_AK_Relatedness/AK_Females_and_Unknowns.txt",quote = F,sep = " ",row.names = F,col.names = F)
+write.table(x = All_input,file="../Data/Colony_AK_Relatedness/AK_all_inds.txt",quote = F,sep = " ",row.names = F,col.names = F,na = "00")
+
+#Marker Types and Error Rates File:
+marker_names<-paste((locNames(Strata1_genepop)),sep = "",collapse = " ")
+write.table(file="../Data/Colony_AK_Relatedness/AK_Marker_Types_and_Error_Rates.txt",x = marker_names,
+            quote = F,sep = "",row.names = F,col.names = F)
+write(x=c("0@","0.0000@","0.0001@"),
+      file = "../Data/Colony_AK_Relatedness/AK_Marker_Types_and_Error_Rates.txt",
+      append = T,
+      sep="\r\n"
+      )
+
+
+
+```
+
+Some recent abundance estimates.  These are from the Stock Assessment Reports: 
+
+SE Alaska stock (2021 SAR/Zerbini) - 957 (cv=0.19)
+Gulf of Alaska stock (2019 SAR) - 31,046 (cv=0.21)
+Bering Sea stock (2019 SAR) - 48,215 (cv=0.22)
+
+Given these estimates, there are ~ 80,218 individuals. Given that our dataset has ~80 individuals, we could say that we've sampled 1/1,000 porpoises and that is our probability of including mum or dad in the sample (0.001)
+
+Colony is relatively quick to run: approximately 30 minutes, so would be easy to run this again with different parameters if need be
+
+```{r}
+
+Parentage_dyad<-read.csv("../Data/Colony_AK_Relatedness/AK_Porpoise_all_AK_254_SNPs/AK_Porpoise_all_AK_254_SNPs.ParentPair") #no parents IDed
+Full_sib_dyad<-read.csv("../Data/Colony_AK_Relatedness/AK_Porpoise_all_AK_254_SNPs/AK_Porpoise_all_AK_254_SNPs.FullSibDyad") #one putative full-sib pair
+Full_sib_dyad
+Half_sib_dyad<-read.csv("../Data/Colony_AK_Relatedness/AK_Porpoise_all_AK_254_SNPs/AK_Porpoise_all_AK_254_SNPs.HalfSibDyad",header=T) #quite a few putative halfsib pairs, some significant. 
+
+Half_sib_dyad$Offspring1strata3<-meta_data$AK_STRATA_3[match(Half_sib_dyad$OffspringID1,meta_data$LABID)]
+Half_sib_dyad$Offspring2strata3<-meta_data$AK_STRATA_3[match(Half_sib_dyad$OffspringID2,meta_data$LABID)]
+Half_sib_dyad$Offspring1strata2<-meta_data$AK_STRATA_2[match(Half_sib_dyad$OffspringID1,meta_data$LABID)]
+Half_sib_dyad$Offspring2strata2<-meta_data$AK_STRATA_2[match(Half_sib_dyad$OffspringID2,meta_data$LABID)]
+Half_sib_dyad 
+
+Half_sib_dyad[Half_sib_dyad$Probability>=0.95,] 
+
+```
+
+Now this is very interesting, half-sibs in very disparate populations... Barrow and the Copper river?? seriously?
+
+How powerful are these markers for parentage? Using CKMR-sim:
+
+
+Setup data for CKMRsim
+```{r}
+CKMR_genepop<-Strata1_genepop
+CKMR_genepop$pop<-as.factor(rep("all",nInd(Strata1_genepop)))
+
+All_genind_df<-genind2df(CKMR_genepop,oneColPerAll = T) %>%rownames_to_column(var = "ind")
+All_genind_df[All_genind_df=="00"]<-"0"
+All_genind_df[All_genind_df=="01"]<-"1"
+All_genind_df[All_genind_df=="02"]<-"2"
+
+# then make some long format genotypes
+long_genos <- All_genind_df %>% dplyr::select(-pop) %>%
+  gather(key = "loc", value = "Allele", -ind) %>%
+  separate(loc, into = c("Locus", "gene_copy"), sep = "\\.") %>%
+  mutate(Allele = as.character(Allele)) %>%
+  mutate(Allele = ifelse(Allele == "0", NA, Allele)) %>%
+  rename(Indiv = ind)
+
+
+alle_freqs <- long_genos %>%
+  count(Locus, Allele) %>%
+  group_by(Locus) %>%
+  mutate(Freq = n / sum(n),
+         Chrom = "Unk",
+         Pos = as.integer(factor(Locus))) %>%
+  ungroup() %>%
+  dplyr::select(Chrom, Pos, Locus, Allele, Freq) %>%
+  arrange(Pos, desc(Freq)) %>%
+  mutate(AlleIdx = NA,
+         LocIdx = NA) %>%
+  filter(!is.na(Allele))
+
+input_AF<-reindex_markers(alle_freqs)
+
+
+
+```
+
+Create a CKMR object
+```{r}
+
+my_kappas<-kappas[c(2:4,13),]
+
+my_ckmr <- create_ckmr(
+  D = input_AF,
+  kappa_matrix = kappas[c("PO", "FS", "HS", "U"), ],
+  ge_mod_assumed = ge_model_TGIE,
+  ge_mod_true = ge_model_TGIE
+)
+
+
+```
+
+
+Simulate genotype pairs and calculate log probabilities:
+
+```{r}
+#Simulate genotype pairs
+ex1_Qs <- simulate_Qij(my_ckmr, 
+                       calc_relats = c("PO", "FS", "HS", "U"),
+                       sim_relats = c("PO", "FS", "HS", "U"),
+                       reps=10000) #number of pairs of relationships
+
+#Extract Log Likelihoods
+PO_U_logls <- extract_logls(ex1_Qs,
+                            numer = c(PO = 1),
+                            denom = c(U = 1))
+
+ggplot(PO_U_logls,
+            aes(x = logl_ratio, fill = true_relat)) +
+  geom_density(alpha = 0.25)
+
+ggplot(PO_U_logls %>% filter(true_relat %in% c("PO", "U")),
+            aes(x = logl_ratio, fill = true_relat)) +
+  geom_density(alpha = 0.25)
+
+```
+
+Simulate genotype pairs and calculate log probabilities:
+
+"My general recommendation for being confident about not erroneously identifying unrelated individuals as related pairs is to require that the FPR be about 10 to 100 times smaller than the reciprocal of the number of comparisons"
+
+So Say we had 500 parents and 500 offspring
+```{r}
+threshold<-0.1 * (80 * 80) ^ (-1)
+threshold
+```
+
+Could look at this in two ways: 80 parents and 80 offspring OR 80,000 parents and 80,000 offspring... or something like 40k and 40k?
+
+```{r}
+
+# false positive rates when the true relationship is U, but we are looking for PO pairs.
+
+ex1_PO_is <- mc_sample_simple(ex1_Qs, 
+                 nu = c("PO","FS","HS"),
+                 de = "U")
+
+ex1_PO_is #PO pairs: FPR < 1.09e-06 when the FNR is <0.05 when we are talking about 80 comparisons... threshold FPR = 1.56e-05
+
+
+#but with 80,000 comparisons, our threshold is 
+threshold<-0.1 * (80000 * 80000) ^ (-1)
+threshold
+
+ex1_PO_is_12_15 <- mc_sample_simple(ex1_Qs, 
+                 nu = c("PO"),
+                 de = "U", 
+                 lambda_stars = seq(1, 20, by = .1))
+ex1_PO_is_12_15 %>%
+  filter(FPR > threshold) %>%
+  arrange(FPR) %>%
+  slice(1)
+
+#So our loglikelihood cutoff for relationships would be 20.2 to get zero false positives for PO pairs, 20.6 for full-siblings, and 18.5 for HalfSibs... but we would get a substantial number of false negatives (0.3)... this is still not bad, and justifies that this panel will be effective for parentage
+
+#If we say 80 comparisons, then the log likelihood cutoff is 2.4 with a 1.81e-5 FPR and 0.0002 FNR
+
+```
+
+
+### Checking for duplicate individuals in the dataset using CKMRsim
+
+```{r}
+
+matchers <- find_close_matching_genotypes(LG = long_genos,
+                                          CK = my_ckmr,
+                                          max_mismatch = 50)
+matchers 
+#no duplicates :)
+
+```
+
+Doing pairwise comparisons in CKMRsim. Note, it is virtually impossible to tell apart FS from PO pairs. With 80 comparisons, the logl ratio is >7.75... with 80,000 it is more like 17
+
+```{r}
+po_pairwise_logls <- pairwise_kin_logl_ratios(D1 = long_genos, 
+                                              D2 = long_genos, 
+                                              CK = my_ckmr,
+                                              numer = "PO",
+                                              denom = "U",
+                                              num_cores = 4)
+PO_pairs<-po_pairwise_logls %>%
+  filter(logl_ratio > 20.6) %>%
+  arrange(desc(logl_ratio))%>%
+  mutate(D2_strata=Strata1_genepop$other$Strata3[match(D2_indiv,indNames(Strata1_genepop))],
+         D1_strata=Strata1_genepop$other$Strata3[match(D1_indiv,indNames(Strata1_genepop))])
+PO_pairs
+
+
+fs_pairwise_logls <- pairwise_kin_logl_ratios(D1 = long_genos,
+                                              D2 = long_genos,
+                                              CK = my_ckmr,
+                                              numer = "FS",
+                                              denom = "U", 
+                                              num_cores = 4)
+FS_pairs<-fs_pairwise_logls %>%
+  filter(logl_ratio > 20.2) %>%
+  arrange(desc(logl_ratio))%>%
+  mutate(D2_strata=Strata1_genepop$other$Strata3[match(D2_indiv,indNames(Strata1_genepop))],
+         D1_strata=Strata1_genepop$other$Strata3[match(D1_indiv,indNames(Strata1_genepop))])
+FS_pairs
+
+hs_pairwise_logls <- pairwise_kin_logl_ratios(D1 = long_genos,
+                                              D2 = long_genos,
+                                              CK = my_ckmr,
+                                              numer = "HS",
+                                              denom = "U", 
+                                              num_cores = 4)
+HS_pairs<-hs_pairwise_logls %>%
+  filter(logl_ratio > 18.5) %>%
+  arrange(desc(logl_ratio))%>%
+  mutate(D2_strata=Strata1_genepop$other$Strata3[match(D2_indiv,indNames(Strata1_genepop))],
+         D1_strata=Strata1_genepop$other$Strata3[match(D1_indiv,indNames(Strata1_genepop))])
+HS_pairs
+
+```
+
+Note that it is nearly impossible to tell FS and PO apart, and also difficult to tell HS apart. So, here we are basically left with 5 pairs of potential relatives that should at least be treated as full-sibs. All are nearby each other, and thus feasible. (The NA is from Kodiak)
+
+
+So, our list of putative close-kin pairs are:
+73645 - 73646: PO or FS or HS (Cook - Cook) (CKMRsim + Colony)
+6987 - 6988: PO of FS (Barrow - Barrow) (CKMR)
+4845 - 849: FS (Copper - Copper) (CKMR)
+108549 - 73646: FS (Kodiak - Cook) (CKMR)
+28911 - 849: FS (Cook - Copper) (CKMR)
+12595 - 144614: HS (SEBS-NSEAK) (Colony)
+151049 - 73682: HS (NSEAK - NEBS) (Colony)
+16598 - 27471: HS (NEBS - Barrow) (Colony)
+18840 - 62277: HS (NEBS - NEBS) (Colony)
+25512 - 73682: HS (NEBS - NEBS) (Colony)
+4843 - 5569: HS (Copper - Copper) (Colony)
+4846 - 4847: HS (Copper - Copper) (Colony)
+4846 - 117069: HS (Copper - SEBS) (Colony)
+79627 - 851: HS (Yakutat - Copper) (Colony)
+
+Things that jump out: 
+
+1) 4846 and 849 appear in multiple relationships.
+2) Colony and CKMRsim have low concordance 
+
+
+I want the proportion of missing data and the Haplotype IDs for all these individuals:
+
+```{r}
+#73645 - 73646
+#6987 - 6988
+#4845 - 849
+#108549 - 73646
+#28911 - 849
+#12595 - 144614
+#151049 - 73682
+#16598 - 27471
+#18840 - 62277
+#25512 - 73682
+#4843 - 5569
+#4846 - 4847
+#4846 - 117069
+#79627 - 851
+
+relats<-c(73645, 73646,
+6987, 6988,
+4845, 849,
+108549, 73646,
+28911, 849,
+12595, 144614,
+151049, 73682,
+16598, 27471,
+18840, 62277,
+25512, 73682,
+4843, 5569,
+4846, 4847,
+4846, 117069,
+79627, 851)
+
+relats_df<-as.data.frame(propTyped(Strata1_genepop))%>%rownames_to_column(var = "LABID") %>% filter(LABID%in%relats)
+
+relats_df$Haplotypes<-as.character(meta_data$Haplotypes[match(relats_df$LABID,meta_data$LABID)])
+relats_df
+
+```
+
+
+
+#Export workspace for use in spatial analysis script
+```{r}
+
+save.image(file="Relatedness_and_Fstats_Workspace.RData")
+
+```
+
+
+
